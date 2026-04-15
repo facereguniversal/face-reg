@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  # -----------------------------------------------------------------------
+  # PostgreSQL
+  # -----------------------------------------------------------------------
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: faceuser
+      POSTGRES_PASSWORD: facepass
+      POSTGRES_DB: facedb
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ../db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faceuser -d facedb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -----------------------------------------------------------------------
+  # API Service (FastAPI)
+  # -----------------------------------------------------------------------
+  api:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://faceuser:facepass@db:5432/facedb"
+      SECRET_KEY: "local-dev-secret-change-in-prod"
+      MODEL_SERVER_URL: "http://model_server:8001"
+    ports:
+      - "8000:8000"
+
+  # -----------------------------------------------------------------------
+  # Model Server (ML inference + FAISS)
+  # -----------------------------------------------------------------------
+  model_server:
+    build:
+      context: ../
+      dockerfile: deploy/Dockerfile.model
+    restart: unless-stopped
+    environment:
+      FAISS_INDEX_PATH: /data/faiss.index
+      FAISS_MAP_PATH: /data/faiss_id_map.json
+    ports:
+      - "8001:8001"
+    volumes:
+      - model_data:/data
+
+volumes:
+  pgdata:
+  model_data:
