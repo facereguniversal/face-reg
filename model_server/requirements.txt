@@ -1,0 +1,20 @@
+# Model server dependencies
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# ML / Face recognition
+insightface>=0.7.3
+# Use onnxruntime (CPU). For GPU, replace with: onnxruntime-gpu>=1.17.0
+onnxruntime>=1.17.0
+
+# Vector search
+faiss-cpu>=1.8.0
+
+# Image processing
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
+Pillow>=10.3.0
+
+# Utilities
+pydantic>=2.6.0
+python-multipart>=0.0.9
