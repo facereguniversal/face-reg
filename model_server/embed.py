@@ -63,9 +63,9 @@ def _load_embedding_model() -> Any:
         model.prepare(ctx_id=0, det_size=(640, 640))
         embedding_model = model
         logger.info("ArcFace embedding model loaded")
-    except ImportError:
+    except Exception as e:
         logger.warning(
-            "insightface not available – embeddings will be random placeholders"
+            "insightface not available (%s) – embeddings will be random placeholders", e
         )
         embedding_model = "placeholder"
     return embedding_model
@@ -254,7 +254,8 @@ async def index_embedding(req: IndexRequest):
 @app.get("/health")
 async def health():
     total = faiss_index.ntotal if faiss_index else 0
-    return {"status": "ok", "index_size": total}
+    mode = "insightface" if embedding_model and embedding_model != "placeholder" else "fallback"
+    return {"status": "ok", "index_size": total, "mode": mode}
 
 
 if __name__ == "__main__":

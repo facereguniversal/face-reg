@@ -89,6 +89,7 @@ class FaceService:
         user_id: uuid.UUID,
         image_data: list[bytes],
         db: AsyncSession,
+        client_ip: str | None = None,
     ) -> EnrollResponse:
         """Run the full enrollment pipeline for a user's face images."""
         audit_svc = AuditService(db)
@@ -108,8 +109,8 @@ class FaceService:
             else:
                 logger.warning(f"Image {i} for user {user_id} failed quality check: {report}")
 
-        if not valid_images:
-            raise HTTPException(status_code=400, detail="No images passed quality checks. Please try taking better photos.")
+        if len(valid_images) < 4:
+            raise HTTPException(status_code=400, detail=f"Only {len(valid_images)} images passed quality checks. Minimum 4 required.")
 
         # 2. Extract embeddings
         embeddings_resp = await self._get_embeddings(valid_images)
@@ -146,6 +147,7 @@ class FaceService:
             user_id=user_id,
             action="FACE_ENROLL",
             details={"templates_enrolled": len(template_ids), "quality_scores": quality_scores},
+            source_ip=client_ip,
         )
 
         return EnrollResponse(
@@ -161,6 +163,7 @@ class FaceService:
         self,
         image_data: bytes,
         db: AsyncSession,
+        client_ip: str | None = None,
     ) -> IdentifyResponse:
         """Identify a face from a single image against all enrolled faces."""
         t0 = time.perf_counter()
@@ -201,6 +204,7 @@ class FaceService:
                 "matches": [{"user_id": str(m.user_id), "score": m.score} for m in matches],
                 "latency_ms": round((time.perf_counter() - t0) * 1000, 1)
             },
+            source_ip=client_ip,
         )
 
         latency = (time.perf_counter() - t0) * 1000
@@ -215,6 +219,7 @@ class FaceService:
         user_id: uuid.UUID,
         image_data: bytes,
         db: AsyncSession,
+        client_ip: str | None = None,
     ) -> VerifyResponse | None:
         """Verify a face against a specific user's enrolled templates."""
         embed_resp = await self._get_embeddings([image_data])
@@ -243,6 +248,7 @@ class FaceService:
             user_id=user_id,
             action="FACE_VERIFY",
             details={"verified": verified, "score": round(best_score, 4)},
+            source_ip=client_ip,
         )
 
         return VerifyResponse(
@@ -250,6 +256,36 @@ class FaceService:
             score=round(best_score, 4),
             threshold=SIMILARITY_THRESHOLD,
         )
+
+    # ------------------------------------------------------------------
+    # Validate
+    # ------------------------------------------------------------------
+
+    async def validate(self, image_data: bytes) -> ValidateResponse:
+        """Validate a single image for quality without enrolling."""
+        # 1. Local quality check
+        np_arr = np.frombuffer(image_data, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return ValidateResponse(passed=False, quality_score=None, issues=["invalid_image"])
+        
+        report = assess_quality(img)
+        issues = []
+        if not report.passed:
+            issues.extend(report.issues)
+
+        # 2. Model server check (face presence)
+        embed_resp = await self._get_embeddings([image_data])
+        if not embed_resp:
+            issues.append("no_face_detected")
+            return ValidateResponse(passed=False, quality_score=None, issues=issues)
+        
+        quality = embed_resp[0].get("quality", 0.0)
+        if quality <= 0.5:
+            issues.append("low_quality")
+            
+        passed = len(issues) == 0
+        return ValidateResponse(passed=passed, quality_score=quality, issues=issues)
 
     # ------------------------------------------------------------------
     # Template CRUD helpers

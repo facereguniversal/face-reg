@@ -6,17 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture()
-def client():
-    """Create a test client for the FastAPI app.
 
-    Uses a fresh in-memory SQLite DB for isolation (override the
-    database dependency before running full integration tests).
-    """
-    from api.main import app
-
-    with TestClient(app) as c:
-        yield c
 
 
 class TestHealthEndpoint:
