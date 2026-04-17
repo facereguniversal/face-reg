@@ -43,9 +43,9 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r api/requirements.txt
-      - run: pytest tests/api_tests.py -v
+      - run: PYTHONPATH=. pytest tests/api_tests.py tests/audit_tests.py tests/model_tests.py -v
         env:
-          DATABASE_URL: "postgresql+asyncpg://faceuser:facepass@localhost:5432/facedb"
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
           SECRET_KEY: "ci-test-secret"
 
   test-model:
@@ -59,7 +59,7 @@ jobs:
           python-version: "3.11"
       - run: pip install opencv-python-headless numpy
       - run: pip install -r model_server/requirements.txt || true
-      - run: pytest tests/model_tests.py -v
+      - run: PYTHONPATH=. pytest tests/model_tests.py -v
 
   docker-build:
     name: Docker Build Check

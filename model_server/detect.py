@@ -62,9 +62,9 @@ class FaceDetector:
             )
             self._detector.prepare(ctx_id=0, det_size=(640, 640))
             logger.info("InsightFace detector loaded successfully")
-        except ImportError:
+        except Exception as e:
             logger.warning(
-                "insightface not installed – falling back to OpenCV Haar cascade"
+                "insightface not installed or failed to initialize (%s) – falling back to OpenCV Haar cascade", e
             )
             self._detector = "opencv_fallback"
 

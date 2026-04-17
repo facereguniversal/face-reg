@@ -103,6 +103,12 @@ class VerifyResponse(BaseModel):
     threshold: float
 
 
+class ValidateResponse(BaseModel):
+    passed: bool
+    quality_score: float | None
+    issues: list[str]
+
+
 # ---------------------------------------------------------------------------
 # Utility
 # ---------------------------------------------------------------------------

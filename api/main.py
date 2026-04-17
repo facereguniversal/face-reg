@@ -10,7 +10,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import auth, faces, users
+from api.services.database import get_db
 from api.services.face_service import FaceService
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from fastapi import Depends
 
 
 @asynccontextmanager
@@ -63,9 +67,42 @@ app.include_router(identify.router, prefix="/api", tags=["Recognition"])
 
 
 @app.get("/api/health", tags=["Utility"])
-async def health_check():
+async def health_check(db: AsyncSession = Depends(get_db)):
     """Return service health status."""
-    return {"status": "ok"}
+    health = {
+        "status": "ok",
+        "database": "unknown",
+        "model_server": "unknown",
+        "model_mode": "unknown"
+    }
+    
+    # Check DB
+    try:
+        await db.execute(text("SELECT 1"))
+        health["database"] = "ok"
+    except Exception:
+        health["database"] = "down"
+        health["status"] = "degraded"
+
+    # Check Model Server
+    try:
+        import httpx
+        import os
+        model_server_url = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            res = await client.get(f"{model_server_url}/health")
+            if res.status_code == 200:
+                health["model_server"] = "ok"
+                data = res.json()
+                health["model_mode"] = data.get("mode", "unknown")
+            else:
+                health["model_server"] = "down"
+                health["status"] = "degraded"
+    except Exception:
+        health["model_server"] = "down"
+        health["status"] = "degraded"
+
+    return health
 
 
 if __name__ == "__main__":
