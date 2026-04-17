@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-server
+  namespace: face-reg
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-server
+  template:
+    metadata:
+      labels:
+        app: model-server
+    spec:
+      containers:
+        - name: model-server
+          image: face-reg-model:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          env:
+            - name: FAISS_INDEX_PATH
+              value: "/data/faiss.index"
+            - name: FAISS_MAP_PATH
+              value: "/data/faiss_id_map.json"
+          volumeMounts:
+            - name: model-data
+              mountPath: /data
+      volumes:
+        - name: model-data
+          persistentVolumeClaim:
+            claimName: model-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-server
+  namespace: face-reg
+spec:
+  selector:
+    app: model-server
+  ports:
+    - protocol: TCP
+      port: 8001
+      targetPort: 8001
