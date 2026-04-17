@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,7 +47,7 @@ async def test_user_delete_logs_audit(db: AsyncSession):
     logs = result.scalars().all()
 
     assert len(logs) == 2  # CREATE and DELETE
-    delete_log = [l for l in logs if l.action == "USER_DELETE"][0]
+    delete_log = [log for log in logs if log.action == "USER_DELETE"][0]
     assert delete_log.details["email"] == "test@example.com"
 
 

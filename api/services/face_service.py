@@ -20,6 +20,7 @@ from api.models.schemas import (
     EnrollResponse,
     IdentifyResponse,
     MatchResult,
+    ValidateResponse,
     VerifyResponse,
 )
 from api.services.audit_service import AuditService
@@ -312,12 +313,11 @@ class FaceService:
 
     @staticmethod
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
-        """Compute cosine similarity between two vectors."""
-        import math
-
-        dot = sum(x * y for x, y in zip(a, b))
-        mag_a = math.sqrt(sum(x * x for x in a))
-        mag_b = math.sqrt(sum(y * y for y in b))
-        if mag_a == 0 or mag_b == 0:
+        """Compute cosine similarity between two vectors using numpy."""
+        arr_a = np.array(a)
+        arr_b = np.array(b)
+        norm_a = float(np.linalg.norm(arr_a))
+        norm_b = float(np.linalg.norm(arr_b))
+        if norm_a == 0.0 or norm_b == 0.0:
             return 0.0
-        return dot / (mag_a * mag_b)
+        return float(np.dot(arr_a, arr_b) / (norm_a * norm_b))
