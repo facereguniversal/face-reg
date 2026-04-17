@@ -13,7 +13,6 @@ from api.models.schemas import (
     IdentifyBatchResponse,
     IdentifyBatchResult,
     IdentifyResponse,
-    MatchResult,
     VerifyResponse,
 )
 from api.services.database import get_db
