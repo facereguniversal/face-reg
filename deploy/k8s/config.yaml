@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-config
+  namespace: face-reg
+data:
+  POSTGRES_USER: "faceuser"
+  POSTGRES_DB: "facedb"
+  # Hardcoded URL pointing to the postgres service port
+  DATABASE_URL: "postgresql+asyncpg://faceuser:facepass@db:5432/facedb"
+  MODEL_SERVER_URL: "http://model-server:8001"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-schema
+  namespace: face-reg
+data:
+  01_schema.sql: |
+    -- Enable UUID generation
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+    -- Users
+    CREATE TABLE IF NOT EXISTS users (
+        id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        name        VARCHAR(255)    NOT NULL,
+        email       VARCHAR(255)    NOT NULL UNIQUE,
+        hashed_password VARCHAR(255),
+        role        VARCHAR(50)     NOT NULL DEFAULT 'user',
+        is_active   BOOLEAN         NOT NULL DEFAULT TRUE,
+        extra_metadata JSONB,
+        created_at  TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX idx_users_email ON users (email);
+
+    -- Images
+    CREATE TABLE IF NOT EXISTS images (
+        id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id         UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        filepath        TEXT            NOT NULL,
+        capture_time    TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+        resolution      BIGINT,
+        quality_score   FLOAT
+    );
+    CREATE INDEX idx_images_user ON images (user_id);
+
+    -- Face Templates (embeddings)
+    CREATE TABLE IF NOT EXISTS face_templates (
+        id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id         UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        embedding       JSONB,
+        model           VARCHAR(100)    NOT NULL DEFAULT 'arcface_r100',
+        quality_score   FLOAT,
+        source_image_id UUID            REFERENCES images(id),
+        created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX idx_face_templates_user ON face_templates (user_id);
+
+    -- Audit Logs (append-only)
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id          BIGSERIAL PRIMARY KEY,
+        user_id     UUID            REFERENCES users(id),
+        action      VARCHAR(100)    NOT NULL,
+        details     JSONB,
+        timestamp   TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+        source_ip   VARCHAR(50)
+    );
+    CREATE INDEX idx_audit_logs_user   ON audit_logs (user_id);
+    CREATE INDEX idx_audit_logs_action ON audit_logs (action);
+    CREATE INDEX idx_audit_logs_ts     ON audit_logs (timestamp);
+
+    -- API Tokens (refresh / long-lived)
+    CREATE TABLE IF NOT EXISTS api_tokens (
+        token       VARCHAR(512) PRIMARY KEY,
+        user_id     UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at  TIMESTAMPTZ     NOT NULL,
+        scopes      JSONB,
+        revoked     BOOLEAN         NOT NULL DEFAULT FALSE
+    );
