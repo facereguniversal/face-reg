@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+from pathlib import Path
 from typing import AsyncGenerator
 
 import pytest
@@ -11,9 +13,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from api.main import app
-from api.models.db_models import Base
-from api.services.database import get_db
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from api.main import app  # noqa: E402
+from api.models.db_models import Base  # noqa: E402
+from api.services.database import get_db  # noqa: E402
 
 # Use an in-memory SQLite database for pure API testing without external dependencies
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"

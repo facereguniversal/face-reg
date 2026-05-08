@@ -115,5 +115,7 @@ async def enroll_faces(
         image_data.append(data)
 
     # Delegate to face service (detection → alignment → embedding → store)
-    result = await face_svc.enroll(user_id=user.id, image_data=image_data, db=db, client_ip=client_ip)
+    result = await face_svc.enroll(
+        user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
+    )
     return result

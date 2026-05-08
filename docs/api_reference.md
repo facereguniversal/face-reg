@@ -1,10 +1,10 @@
 # API Reference
 
-Base URL: `http://localhost:8000` (development)
+Base URL: `http://localhost:8000`
 
-All endpoints (except `/api/health` and `/api/auth/*`) require a valid JWT bearer token:
+All endpoints except `/`, `/docs`, `/api/health`, `/demo/capture/`, `/demo/checkin/`, and `/api/auth/*` require a bearer token.
 
-```
+```http
 Authorization: Bearer <access_token>
 ```
 
@@ -12,17 +12,17 @@ Authorization: Bearer <access_token>
 
 ### POST /api/auth/login
 
-Obtain a JWT access token.
+Request:
 
-**Request:**
 ```json
 {
   "email": "admin@example.com",
-  "password": "secret"
+  "password": "adminpass"
 }
 ```
 
-**Response:**
+Response:
+
 ```json
 {
   "access_token": "eyJ...",
@@ -32,181 +32,196 @@ Obtain a JWT access token.
 }
 ```
 
----
-
 ### POST /api/auth/refresh
 
-Exchange a refresh token for a new access token.
+Request:
 
-**Request:**
 ```json
-{ "refresh_token": "eyJ..." }
+{
+  "refresh_token": "eyJ..."
+}
 ```
 
-**Response:** Same shape as login.
-
----
+Response: same shape as login.
 
 ## Users
 
 ### POST /api/users
 
-Create a new user. **Admin only.**
+Admin-only user creation.
 
-**Request:**
+Request:
+
 ```json
 {
   "name": "Jane Doe",
   "email": "jane@example.com",
-  "metadata": { "department": "engineering" }
+  "metadata": {
+    "group": "demo"
+  }
 }
 ```
 
-**Response `201`:**
+Response `201`:
+
 ```json
 {
   "user_id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Jane Doe",
   "email": "jane@example.com",
-  "created_at": "2026-01-01T00:00:00Z"
+  "created_at": "2026-01-01T00:00:00Z",
+  "face_count": 0
 }
 ```
 
----
+### GET /api/users/{user_id}
 
-### GET /api/users/{id}
+Response `200`:
 
-Retrieve user metadata.
-
-**Response `200`:**
 ```json
 {
-  "user_id": "550e8400-...",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
   "name": "Jane Doe",
   "email": "jane@example.com",
   "created_at": "2026-01-01T00:00:00Z",
-  "face_count": 3
+  "face_count": 4
 }
 ```
 
----
+### DELETE /api/users/{user_id}
 
-### DELETE /api/users/{id}
+Response: `204 No Content`
 
-Delete a user and all associated face templates. **Admin only.**
+## Faces
 
-**Response:** `204 No Content`
+### POST /api/users/{user_id}/faces
 
----
+Multipart enrollment with 4 to 6 `images` fields.
 
-## Face Enrollment
+Response `201`:
 
-### POST /api/users/{id}/faces
-
-Enroll 4–6 face images for the given user. Images must be sent as `multipart/form-data`.
-
-**Request:**
-```
-Content-Type: multipart/form-data
-
-images: <file1.jpg>
-images: <file2.jpg>
-...
-```
-
-**Response `201`:**
 ```json
 {
-  "template_ids": ["uuid1", "uuid2", "uuid3"],
+  "template_ids": [
+    "uuid1",
+    "uuid2",
+    "uuid3",
+    "uuid4"
+  ],
   "status": "enrolled",
-  "quality_scores": [0.92, 0.88, 0.95]
+  "quality_scores": [0.92, 0.88, 0.95, 0.91]
 }
 ```
 
-**Error `422`** if fewer than 1 valid face detected, or quality too low.
+Common failure responses:
 
----
+- `400` when fewer than four images pass local quality checks.
+- `400` when fewer than four images produce valid embeddings.
+- `404` when the target user does not exist.
+
+### POST /api/faces/validate
+
+Multipart request with a single `image` field.
+
+Response `200`:
+
+```json
+{
+  "passed": true,
+  "quality_score": 0.91,
+  "issues": []
+}
+```
+
+Rejected example:
+
+```json
+{
+  "passed": false,
+  "quality_score": null,
+  "issues": ["invalid_embedding"]
+}
+```
 
 ### GET /api/faces/{template_id}
 
-Get metadata for a specific face template.
+Response `200`:
 
-**Response `200`:**
 ```json
 {
   "face_id": "uuid1",
-  "user_id": "550e8400-...",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
   "model": "arcface_r100",
   "quality_score": 0.92,
   "created_at": "2026-01-01T00:00:00Z"
 }
 ```
 
----
-
 ### DELETE /api/faces/{template_id}
 
-Delete a specific face template. **Admin or template owner.**
-
-**Response:** `204 No Content`
-
----
+Response: `204 No Content`
 
 ## Recognition
 
 ### POST /api/identify
 
-Identify the face in a submitted image against all enrolled users (1:N search).
+Multipart request with one `image` field.
 
-**Request:** `multipart/form-data` with `image` field, or JSON:
-```json
-{ "image_url": "https://example.com/photo.jpg" }
-```
+Response `200`:
 
-**Response `200`:**
 ```json
 {
   "matches": [
-    { "user_id": "550e8400-...", "name": "Jane Doe", "score": 0.98 },
-    { "user_id": "660e8400-...", "name": "John Smith", "score": 0.76 }
+    {
+      "user_id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "Jane Doe",
+      "score": 0.98
+    }
   ],
-  "latency_ms": 45
+  "latency_ms": 42.7
 }
 ```
 
-Returns an empty `matches` array if no face exceeds the similarity threshold.
-
----
+If no face can be embedded or no match exceeds the threshold, `matches` is empty.
 
 ### POST /api/identify/batch
 
-Identify faces in multiple images in one call.
+Multipart request with repeated `images` fields.
 
-**Request:** `multipart/form-data` with multiple `images` fields.
+Response `200`:
 
-**Response `200`:**
 ```json
 {
   "results": [
-    { "image_index": 0, "matches": [{ "user_id": "...", "score": 0.95 }] },
-    { "image_index": 1, "matches": [] }
+    {
+      "image_index": 0,
+      "matches": [
+        {
+          "user_id": "550e8400-e29b-41d4-a716-446655440000",
+          "name": "Jane Doe",
+          "score": 0.98
+        }
+      ]
+    },
+    {
+      "image_index": 1,
+      "matches": []
+    }
   ]
 }
 ```
 
----
-
 ### POST /api/verify
 
-Verify whether an image matches a specific user (1:1).
+Multipart request:
 
-**Request:** `multipart/form-data`:
-```
-user_id: 550e8400-...
+```text
+user_id: 550e8400-e29b-41d4-a716-446655440000
 image: <file.jpg>
 ```
 
-**Response `200`:**
+Response `200`:
+
 ```json
 {
   "verified": true,
@@ -215,41 +230,26 @@ image: <file.jpg>
 }
 ```
 
----
-
 ## Utility
 
 ### GET /api/health
 
-Health check. No authentication required.
+Response `200`:
 
-**Response `200`:**
 ```json
 {
   "status": "ok",
+  "database": "ok",
   "model_server": "ok",
-  "database": "ok"
+  "model_mode": "insightface"
 }
 ```
 
----
+## Demo UI Paths
 
-## Error Responses
+The browser demos are served by the API service:
 
-All errors follow this format:
+- `GET /demo/capture/`
+- `GET /demo/checkin/`
 
-```json
-{
-  "detail": "Human-readable error message"
-}
-```
-
-| Code | Meaning |
-|---|---|
-| `400` | Bad request / invalid input |
-| `401` | Missing or invalid token |
-| `403` | Insufficient permissions |
-| `404` | Resource not found |
-| `422` | Validation error (Pydantic) |
-| `429` | Rate limit exceeded |
-| `500` | Internal server error |
+Both UIs call the API on the same host origin and accept a `token` query parameter for demo-only auth bootstrapping.

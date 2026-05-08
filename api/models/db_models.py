@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Integer,
     String,
     Text,
 )
@@ -104,15 +105,17 @@ class AuditLog(Base):
 
     __tablename__ = "audit_logs"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True,
+        autoincrement=True,
+    )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     source_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     user: Mapped[User | None] = relationship(back_populates="audit_logs")
@@ -127,6 +130,8 @@ class APIToken(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     scopes: Mapped[list | None] = mapped_column(JSON, nullable=True)
     revoked: Mapped[bool] = mapped_column(default=False)

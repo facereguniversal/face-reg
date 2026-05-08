@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = `${window.location.origin}/api`;
 const urlParams = new URLSearchParams(window.location.search);
 const USER_ID = urlParams.get('userId') || "00000000-0000-0000-0000-000000000000"; 
 const TOKEN = urlParams.get('token') || "";

@@ -70,7 +70,11 @@ def _load_embedding_model() -> Any:
     return embedding_model
 
 
-def _extract_embedding(aligned_face: np.ndarray) -> list[float]:
+def _is_zero_vector(vector: np.ndarray) -> bool:
+    return bool(np.linalg.norm(vector) <= 1e-6)
+
+
+def _extract_embedding(aligned_face: np.ndarray) -> list[float] | None:
     """Extract a 512-d embedding from an aligned face crop."""
     model = _load_embedding_model()
 
@@ -83,12 +87,16 @@ def _extract_embedding(aligned_face: np.ndarray) -> list[float]:
         vec /= np.linalg.norm(vec)
         return vec.tolist()
 
-    # Full InsightFace pipeline on the already-aligned crop
-    faces = model.get(aligned_face)
-    if not faces:
-        # If detection fails on the crop, return zero vector
-        return [0.0] * EMBEDDING_DIM
-    return faces[0].embedding.tolist()
+    recognition_model = model.models.get("recognition")
+    if recognition_model is None:
+        logger.error("InsightFace recognition model is unavailable")
+        return None
+
+    embedding = np.array(recognition_model.get_feat(aligned_face)[0], dtype=np.float32)
+    if _is_zero_vector(embedding):
+        return None
+    embedding /= np.linalg.norm(embedding)
+    return embedding.tolist()
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +122,9 @@ def _load_faiss_index():
         if map_path.exists():
             id_map = {int(k): v for k, v in json.loads(map_path.read_text()).items()}
     else:
-        faiss_index = faiss.IndexFlatIP(EMBEDDING_DIM)  # Inner product (cosine on L2-normed vecs)
+        faiss_index = faiss.IndexFlatIP(
+            EMBEDDING_DIM
+        )  # Inner product (cosine on L2-normed vecs)
         index_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info("Created new FAISS FlatIP index (dim=%d)", EMBEDDING_DIM)
 
@@ -154,6 +164,8 @@ async def shutdown():
 class EmbedResult(BaseModel):
     embedding: list[float]
     quality: float
+    valid: bool
+    issues: list[str] = []
 
 
 class SearchRequest(BaseModel):
@@ -197,15 +209,33 @@ async def embed(images: list[UploadFile] = File(...)):
         data = await img_file.read()
         detections = detector.detect(data)
         if not detections:
-            # No face found – return zero embedding
-            results.append({"embedding": [0.0] * EMBEDDING_DIM, "quality": 0.0})
+            results.append(
+                {
+                    "embedding": [0.0] * EMBEDDING_DIM,
+                    "quality": 0.0,
+                    "valid": False,
+                    "issues": ["no_face_detected"],
+                }
+            )
             continue
         # Use the first (highest-confidence) face
         face = detections[0]
         aligned = face["aligned"]
-        emb = _extract_embedding(aligned)
         quality = _compute_quality(aligned)
-        results.append({"embedding": emb, "quality": quality})
+        emb = _extract_embedding(aligned)
+        if emb is None:
+            results.append(
+                {
+                    "embedding": [0.0] * EMBEDDING_DIM,
+                    "quality": quality,
+                    "valid": False,
+                    "issues": ["invalid_embedding"],
+                }
+            )
+            continue
+        results.append(
+            {"embedding": emb, "quality": quality, "valid": True, "issues": []}
+        )
     return {"results": results}
 
 
@@ -218,8 +248,9 @@ async def search(req: SearchRequest):
     query = np.array([req.embedding], dtype=np.float32)
     # L2-normalise for cosine similarity via inner product
     norm = np.linalg.norm(query)
-    if norm > 0:
-        query /= norm
+    if norm <= 1e-6:
+        return {"results": []}
+    query /= norm
 
     k = min(req.top_k, faiss_index.ntotal)
     scores, indices = faiss_index.search(query, k)
@@ -241,8 +272,9 @@ async def index_embedding(req: IndexRequest):
 
     vec = np.array([req.embedding], dtype=np.float32)
     norm = np.linalg.norm(vec)
-    if norm > 0:
-        vec /= norm
+    if norm <= 1e-6:
+        return {"status": "invalid_embedding"}
+    vec /= norm
 
     idx = faiss_index.ntotal  # next sequential id
     faiss_index.add(vec)
@@ -253,7 +285,11 @@ async def index_embedding(req: IndexRequest):
 @app.get("/health")
 async def health():
     total = faiss_index.ntotal if faiss_index else 0
-    mode = "insightface" if embedding_model and embedding_model != "placeholder" else "fallback"
+    mode = (
+        "insightface"
+        if embedding_model and embedding_model != "placeholder"
+        else "fallback"
+    )
     return {"status": "ok", "index_size": total, "mode": mode}
 
 

@@ -21,6 +21,7 @@ router = APIRouter()
 # Validate face image quality
 # ---------------------------------------------------------------------------
 
+
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_face(
     image: UploadFile = File(..., description="Face image to validate"),
@@ -30,9 +31,6 @@ async def validate_face(
     data = await image.read()
     result = await face_svc.validate(data)
     return result
-
-
-
 
 
 @router.get("/{template_id}", response_model=FaceTemplateResponse)

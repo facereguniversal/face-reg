@@ -5,16 +5,22 @@ Initializes the FastAPI app, registers routers, and configures middleware.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.bootstrap import bootstrap_demo_data
 from api.routes import auth, faces, users
 from api.services.database import get_db
 from api.services.face_service import FaceService
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
-from fastapi import Depends
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+COLUMN_CAPTURE_DIR = BASE_DIR / "ingestion" / "capture_ui"
+CHECKIN_DIR = BASE_DIR / "ingestion" / "checkin_ui"
 
 
 @asynccontextmanager
@@ -24,6 +30,7 @@ async def lifespan(app: FastAPI):
     face_service = FaceService()
     await face_service.initialize()
     app.state.face_service = face_service
+    await bootstrap_demo_data()
     yield
     # Shutdown: persist FAISS index to disk
     await face_service.shutdown()
@@ -55,6 +62,17 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 
+app.mount(
+    "/demo/capture",
+    StaticFiles(directory=COLUMN_CAPTURE_DIR, html=True),
+    name="demo-capture",
+)
+app.mount(
+    "/demo/checkin",
+    StaticFiles(directory=CHECKIN_DIR, html=True),
+    name="demo-checkin",
+)
+
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
 app.include_router(faces.router, prefix="/api/faces", tags=["Faces"])
@@ -66,6 +84,17 @@ from api.routes import identify  # noqa: E402
 app.include_router(identify.router, prefix="/api", tags=["Recognition"])
 
 
+@app.get("/", include_in_schema=False)
+async def root():
+    """Return the main entrypoints for operators and demo users."""
+    return {
+        "docs": "/docs",
+        "health": "/api/health",
+        "demo_capture": "/demo/capture/",
+        "demo_checkin": "/demo/checkin/",
+    }
+
+
 @app.get("/api/health", tags=["Utility"])
 async def health_check(db: AsyncSession = Depends(get_db)):
     """Return service health status."""
@@ -73,9 +102,9 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         "status": "ok",
         "database": "unknown",
         "model_server": "unknown",
-        "model_mode": "unknown"
+        "model_mode": "unknown",
     }
-    
+
     # Check DB
     try:
         await db.execute(text("SELECT 1"))
@@ -88,6 +117,7 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     try:
         import httpx
         import os
+
         model_server_url = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
         async with httpx.AsyncClient(timeout=2.0) as client:
             res = await client.get(f"{model_server_url}/health")
