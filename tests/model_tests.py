@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
+import pytest
+
+
+def make_face_bytes() -> bytes:
+    img = np.random.randint(80, 180, (160, 160, 3), dtype=np.uint8)
+    img[40:120, 40:120] = 255
+    _, buf = cv2.imencode(".jpg", img)
+    return buf.tobytes()
 
 
 class TestPreprocessor:
@@ -46,10 +55,42 @@ class TestDetector:
         from model_server.detect import FaceDetector
 
         det = FaceDetector()
-        # Encode a blank image as JPEG bytes
-        import cv2
-
         blank = np.zeros((200, 200, 3), dtype=np.uint8)
         _, buf = cv2.imencode(".jpg", blank)
         results = det.detect(buf.tobytes())
         assert isinstance(results, list)
+
+
+class TestFaceServiceValidation:
+    """Face service validation rules around embeddings."""
+
+    @pytest.mark.asyncio
+    async def test_validate_rejects_invalid_embedding(self, monkeypatch):
+        from api.services.face_service import FaceService
+
+        face_svc = FaceService()
+
+        async def fake_get_embeddings(_images):
+            return [
+                {
+                    "embedding": [0.0] * 512,
+                    "quality": 1.0,
+                    "valid": False,
+                    "issues": ["invalid_embedding"],
+                }
+            ]
+
+        monkeypatch.setattr(face_svc, "_get_embeddings", fake_get_embeddings)
+
+        result = await face_svc.validate(make_face_bytes())
+
+        assert not result.passed
+        assert "invalid_embedding" in result.issues
+
+    @pytest.mark.asyncio
+    async def test_non_zero_embedding_check(self):
+        from api.services.face_service import FaceService
+
+        face_svc = FaceService()
+        assert face_svc._is_non_zero_embedding([1.0] + [0.0] * 511)
+        assert not face_svc._is_non_zero_embedding([0.0] * 512)

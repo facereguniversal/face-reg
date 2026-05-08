@@ -6,6 +6,7 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 import httpx
@@ -28,9 +29,7 @@ from ingestion.pipeline.preprocessor import assess_quality
 
 logger = logging.getLogger(__name__)
 
-MODEL_SERVER_URL: str = os.environ.get(
-    "MODEL_SERVER_URL", "http://localhost:8001"
-)
+MODEL_SERVER_URL: str = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
 SIMILARITY_THRESHOLD: float = float(os.environ.get("SIMILARITY_THRESHOLD", "0.6"))
 
 
@@ -43,14 +42,18 @@ class FaceService:
 
     async def initialize(self) -> None:
         """Called on app startup to warm up connections."""
-        logger.info("FaceService initialising – checking model server at %s", MODEL_SERVER_URL)
+        logger.info(
+            "FaceService initialising – checking model server at %s", MODEL_SERVER_URL
+        )
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 res = await client.get(f"{MODEL_SERVER_URL}/health")
                 res.raise_for_status()
                 logger.info("Model server connected: %s", res.json())
         except Exception as e:
-            logger.warning("Failed to connect to model server during initialization: %s", e)
+            logger.warning(
+                "Failed to connect to model server during initialization: %s", e
+            )
 
     async def shutdown(self) -> None:
         """Called on app shutdown."""
@@ -71,7 +74,21 @@ class FaceService:
             resp.raise_for_status()
             return resp.json()["results"]  # [{embedding: [...], quality: 0.9}, ...]
 
-    async def _search(self, embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
+    async def _index_embeddings(
+        self, items: Iterable[tuple[uuid.UUID, list[float]]]
+    ) -> None:
+        """Add the provided embeddings to the model server FAISS index."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for face_id, embedding in items:
+                resp = await client.post(
+                    f"{MODEL_SERVER_URL}/index",
+                    json={"face_id": str(face_id), "embedding": embedding},
+                )
+                resp.raise_for_status()
+
+    async def _search(
+        self, embedding: list[float], top_k: int = 5
+    ) -> list[dict[str, Any]]:
         """Query model server FAISS index for nearest neighbours."""
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
@@ -80,6 +97,19 @@ class FaceService:
             )
             resp.raise_for_status()
             return resp.json()["results"]  # [{face_id, score}, ...]
+
+    @staticmethod
+    def _is_non_zero_embedding(embedding: list[float] | None) -> bool:
+        if not embedding:
+            return False
+        return bool(np.linalg.norm(np.array(embedding, dtype=np.float32)) > 1e-6)
+
+    def _is_valid_embedding_result(self, item: dict[str, Any] | None) -> bool:
+        if not item:
+            return False
+        if not item.get("valid", False):
+            return False
+        return self._is_non_zero_embedding(item.get("embedding"))
 
     # ------------------------------------------------------------------
     # Enroll
@@ -94,32 +124,56 @@ class FaceService:
     ) -> EnrollResponse:
         """Run the full enrollment pipeline for a user's face images."""
         audit_svc = AuditService(db)
-        
+
         # 1. Preprocess and quality check images
-        valid_images = []
+        valid_images: list[bytes] = []
         for i, data in enumerate(image_data):
             # Decode bytes to numpy array
             np_arr = np.frombuffer(data, np.uint8)
             img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if img is None:
                 continue
-            
+
             report = assess_quality(img)
             if report.passed:
                 valid_images.append(data)
             else:
-                logger.warning(f"Image {i} for user {user_id} failed quality check: {report}")
+                logger.warning(
+                    "Image %s for user %s failed quality check: %s",
+                    i,
+                    user_id,
+                    report,
+                )
 
         if len(valid_images) < 4:
-            raise HTTPException(status_code=400, detail=f"Only {len(valid_images)} images passed quality checks. Minimum 4 required.")
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Only {len(valid_images)} images passed quality checks. "
+                    "Minimum 4 required."
+                ),
+            )
 
         # 2. Extract embeddings
         embeddings_resp = await self._get_embeddings(valid_images)
+        valid_results = [
+            item for item in embeddings_resp if self._is_valid_embedding_result(item)
+        ]
+
+        if len(valid_results) < 4:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Only {len(valid_results)} images produced valid embeddings. "
+                    "Minimum 4 required."
+                ),
+            )
 
         template_ids: list[uuid.UUID] = []
         quality_scores: list[float] = []
+        items_to_index: list[tuple[uuid.UUID, list[float]]] = []
 
-        for item in embeddings_resp:
+        for item in valid_results:
             tid = uuid.uuid4()
             template = FaceTemplate(
                 id=tid,
@@ -130,31 +184,21 @@ class FaceService:
             db.add(template)
             template_ids.append(tid)
             quality_scores.append(item.get("quality", 0.0))
+            items_to_index.append((tid, item["embedding"]))
 
         await db.flush()
-
-        # Ask model server to index the new embeddings
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            for tid, item in zip(template_ids, embeddings_resp):
-                await client.post(
-                    f"{MODEL_SERVER_URL}/index",
-                    json={
-                        "face_id": str(tid),
-                        "embedding": item["embedding"],
-                    },
-                )
-        
+        await self._index_embeddings(items_to_index)
         await audit_svc.log_action(
             user_id=user_id,
             action="FACE_ENROLL",
-            details={"templates_enrolled": len(template_ids), "quality_scores": quality_scores},
+            details={
+                "templates_enrolled": len(template_ids),
+                "quality_scores": quality_scores,
+            },
             source_ip=client_ip,
         )
 
-        return EnrollResponse(
-            template_ids=template_ids,
-            quality_scores=quality_scores,
-        )
+        return EnrollResponse(template_ids=template_ids, quality_scores=quality_scores)
 
     # ------------------------------------------------------------------
     # Identify (1:N)
@@ -170,10 +214,22 @@ class FaceService:
         t0 = time.perf_counter()
 
         embed_resp = await self._get_embeddings([image_data])
-        if not embed_resp:
-            return IdentifyResponse(matches=[], latency_ms=0)
+        first = embed_resp[0] if embed_resp else None
+        if not self._is_valid_embedding_result(first):
+            latency = (time.perf_counter() - t0) * 1000
+            await AuditService(db).log_action(
+                user_id=None,
+                action="FACE_IDENTIFY",
+                details={
+                    "matches": [],
+                    "issues": (first or {}).get("issues", ["invalid_embedding"]),
+                    "latency_ms": round(latency, 1),
+                },
+                source_ip=client_ip,
+            )
+            return IdentifyResponse(matches=[], latency_ms=round(latency, 1))
 
-        embedding = embed_resp[0]["embedding"]
+        embedding = first["embedding"]
         search_results = await self._search(embedding)
 
         matches: list[MatchResult] = []
@@ -196,14 +252,16 @@ class FaceService:
                         score=round(hit["score"], 4),
                     )
                 )
-        
+
         audit_svc = AuditService(db)
         await audit_svc.log_action(
             user_id=None,
             action="FACE_IDENTIFY",
             details={
-                "matches": [{"user_id": str(m.user_id), "score": m.score} for m in matches],
-                "latency_ms": round((time.perf_counter() - t0) * 1000, 1)
+                "matches": [
+                    {"user_id": str(m.user_id), "score": m.score} for m in matches
+                ],
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
             },
             source_ip=client_ip,
         )
@@ -224,10 +282,13 @@ class FaceService:
     ) -> VerifyResponse | None:
         """Verify a face against a specific user's enrolled templates."""
         embed_resp = await self._get_embeddings([image_data])
-        if not embed_resp:
-            return VerifyResponse(verified=False, score=0.0, threshold=SIMILARITY_THRESHOLD)
+        first = embed_resp[0] if embed_resp else None
+        if not self._is_valid_embedding_result(first):
+            return VerifyResponse(
+                verified=False, score=0.0, threshold=SIMILARITY_THRESHOLD
+            )
 
-        query_embedding = embed_resp[0]["embedding"]
+        query_embedding = first["embedding"]
 
         stmt = select(FaceTemplate).where(FaceTemplate.user_id == user_id)
         result = await db.execute(stmt)
@@ -241,9 +302,9 @@ class FaceService:
             if tpl.embedding:
                 score = self._cosine_similarity(query_embedding, tpl.embedding)
                 best_score = max(best_score, score)
-                
+
         verified = best_score >= SIMILARITY_THRESHOLD
-        
+
         audit_svc = AuditService(db)
         await audit_svc.log_action(
             user_id=user_id,
@@ -268,23 +329,30 @@ class FaceService:
         np_arr = np.frombuffer(image_data, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         if img is None:
-            return ValidateResponse(passed=False, quality_score=None, issues=["invalid_image"])
-        
+            return ValidateResponse(
+                passed=False, quality_score=None, issues=["invalid_image"]
+            )
+
         report = assess_quality(img)
-        issues = []
+        issues: list[str] = []
         if not report.passed:
             issues.extend(report.issues)
 
         # 2. Model server check (face presence)
         embed_resp = await self._get_embeddings([image_data])
-        if not embed_resp:
-            issues.append("no_face_detected")
-            return ValidateResponse(passed=False, quality_score=None, issues=issues)
-        
-        quality = embed_resp[0].get("quality", 0.0)
+        first = embed_resp[0] if embed_resp else None
+        if not self._is_valid_embedding_result(first):
+            issues.extend((first or {}).get("issues", ["invalid_embedding"]))
+            return ValidateResponse(
+                passed=False,
+                quality_score=None,
+                issues=list(dict.fromkeys(issues)),
+            )
+
+        quality = first.get("quality", 0.0)
         if quality <= 0.5:
             issues.append("low_quality")
-            
+
         passed = len(issues) == 0
         return ValidateResponse(passed=passed, quality_score=quality, issues=issues)
 
@@ -299,9 +367,7 @@ class FaceService:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def delete_template(
-        self, template_id: uuid.UUID, db: AsyncSession
-    ) -> None:
+    async def delete_template(self, template_id: uuid.UUID, db: AsyncSession) -> None:
         template = await self.get_template(template_id, db)
         if template:
             await db.delete(template)

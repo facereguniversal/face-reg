@@ -18,11 +18,11 @@ logger = logging.getLogger(__name__)
 # Target landmarks for an aligned 112×112 face crop (ArcFace standard)
 REFERENCE_LANDMARKS = np.array(
     [
-        [38.2946, 51.6963],   # left eye
-        [73.5318, 51.5014],   # right eye
-        [56.0252, 71.7366],   # nose tip
-        [41.5493, 92.3655],   # left mouth
-        [70.7299, 92.2041],   # right mouth
+        [38.2946, 51.6963],  # left eye
+        [73.5318, 51.5014],  # right eye
+        [56.0252, 71.7366],  # nose tip
+        [41.5493, 92.3655],  # left mouth
+        [70.7299, 92.2041],  # right mouth
     ],
     dtype=np.float32,
 )
@@ -58,13 +58,15 @@ class FaceDetector:
             from insightface.app import FaceAnalysis
 
             self._detector = FaceAnalysis(
-                name="buffalo_l", providers=["CUDAExecutionProvider", "CPUExecutionProvider"]
+                name="buffalo_l",
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
             )
             self._detector.prepare(ctx_id=0, det_size=(640, 640))
             logger.info("InsightFace detector loaded successfully")
         except Exception as e:
             logger.warning(
-                "insightface not installed or failed to initialize (%s) – falling back to OpenCV Haar cascade", e
+                "insightface not installed or failed to initialize (%s) – falling back to OpenCV Haar cascade",
+                e,
             )
             self._detector = "opencv_fallback"
 

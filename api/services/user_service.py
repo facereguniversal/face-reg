@@ -21,20 +21,26 @@ class UserService:
         self.source_ip = source_ip
         self.audit_svc = AuditService(db)
 
-    async def create(self, data: UserCreate, password: str | None = None) -> User:
+    async def create(
+        self,
+        data: UserCreate,
+        password: str | None = None,
+        role: str = "user",
+    ) -> User:
         """Insert a new user."""
         user = User(
             id=uuid.uuid4(),
             name=data.name,
             email=data.email,
             hashed_password=hash_password(password) if password else None,
+            role=role,
             extra_metadata=data.metadata,
         )
         self.db.add(user)
         await self.audit_svc.log_action(
             user_id=user.id,
             action="USER_CREATE",
-            details={"email": data.email},
+            details={"email": data.email, "role": role},
             source_ip=self.source_ip,
         )
         await self.db.flush()

@@ -5,9 +5,6 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 
-
-
-
 class TestHealthEndpoint:
     """Verify the health check endpoint responds correctly."""
 
@@ -15,7 +12,24 @@ class TestHealthEndpoint:
         resp = client.get("/api/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] == "ok"
+        assert data["database"] == "ok"
+        assert data["model_server"] in {"ok", "down"}
+        assert data["status"] in {"ok", "degraded"}
+
+    def test_root_lists_demo_links(self, client: TestClient):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["demo_capture"] == "/demo/capture/"
+        assert data["demo_checkin"] == "/demo/checkin/"
+
+    def test_demo_static_routes_are_served(self, client: TestClient):
+        capture_resp = client.get("/demo/capture/")
+        checkin_resp = client.get("/demo/checkin/")
+        assert capture_resp.status_code == 200
+        assert checkin_resp.status_code == 200
+        assert "Face Recognition" in capture_resp.text
+        assert "Lumiere Hotels" in checkin_resp.text
 
 
 class TestAuthEndpoints:
@@ -28,6 +42,14 @@ class TestAuthEndpoints:
     def test_refresh_missing_body_returns_422(self, client: TestClient):
         resp = client.post("/api/auth/refresh")
         assert resp.status_code == 422
+
+    def test_password_hash_round_trip(self):
+        from api.auth.jwt_handler import hash_password, verify_password
+
+        hashed = hash_password("secret-pass")
+        assert verify_password("secret-pass", hashed)
+        assert not verify_password("wrong-pass", hashed)
+        assert not verify_password("secret-pass", "")
 
 
 class TestUserEndpoints:

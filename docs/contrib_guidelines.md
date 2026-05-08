@@ -30,7 +30,7 @@ pre-commit install
 ## Testing
 
 ```bash
-pytest tests/ -v
+pytest -v
 ```
 
 ## Architecture Decisions

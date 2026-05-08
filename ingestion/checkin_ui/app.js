@@ -1,4 +1,4 @@
-const API_BASE = "http://localhost:8000/api";
+const API_BASE = `${window.location.origin}/api`;
 // We allow query token for auth testing if needed
 const urlParams = new URLSearchParams(window.location.search);
 const TOKEN = urlParams.get('token') || "";
@@ -90,7 +90,7 @@ async function scanFrame() {
             if (result.matches && result.matches.length > 0) {
                 // Determine if confident enough (0.4 cosine sim is often acceptable for ArcFace but config dependent)
                 const match = result.matches[0];
-                if (match.similarity > 0.4) {
+                if (match.score > 0.4) {
                     handleSuccess(match.user_id);
                 }
             }
