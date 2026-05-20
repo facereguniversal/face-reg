@@ -50,11 +50,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()\"",
+          "python -c \"import urllib.error, urllib.request;\\ntry:\\n r=urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\\nexcept urllib.error.HTTPError as e:\\n r=e\\nexit(0 if r.status==200 else 1)\"",
         ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 60s
 
   # -----------------------------------------------------------------------
   # Model Server (ML inference + FAISS)

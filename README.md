@@ -74,18 +74,29 @@ docker compose -f deploy/docker-compose.yml down
 docker compose -f deploy/docker-compose.yml down -v
 ```
 
-## Production deployment
+## Deploy to production (single VM)
 
-For a hardened single-VM stack with TLS (Caddy), Prometheus, and Grafana, see [docs/production.md](docs/production.md).
+Hardened Docker Compose stack: TLS (Caddy), Prometheus, Grafana. Full guide: **[docs/production.md](docs/production.md)**.
 
 ```bash
 cd deploy
 cp .env.production.example .env.production
-# Edit secrets, then:
+# Edit DOMAIN, POSTGRES_PASSWORD, DATABASE_URL, SECRET_KEY, CORS_ORIGINS, CHECKIN_DEVICE_TOKENS, GRAFANA_ADMIN_PASSWORD
+chmod +x scripts/*.sh
+./scripts/bootstrap-production.sh    # validates env, builds, starts stack
+./scripts/seed-admin.sh            # first admin (bootstrap is off in prod)
+```
+
+Or manually:
+
+```bash
+./scripts/validate-env.sh
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
 ```
 
-Production disables demo bootstrap, demo UIs, and OpenAPI. The API is exposed on HTTPS via Caddy (port 443), not directly on 8000.
+- API is only on **HTTPS :443** via Caddy (not host port 8000).
+- Demo UIs: off by default; set `ENABLE_DEMO_UI=true` for hotel kiosk demo (see production doc).
+- Firewall: allow **443** (and **80** for Let's Encrypt); keep Grafana on **127.0.0.1:3000**.
 
 ## Demo Bootstrap
 
