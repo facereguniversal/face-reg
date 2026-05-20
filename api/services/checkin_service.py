@@ -25,9 +25,7 @@ from api.services.audit_service import AuditService
 from api.services.face_service import FaceService
 
 _settings = get_settings()
-CHECKIN_SIMILARITY_THRESHOLD: float = (
-    _settings.effective_checkin_similarity_threshold
-)
+CHECKIN_SIMILARITY_THRESHOLD: float = _settings.effective_checkin_similarity_threshold
 CHECKIN_COOLDOWN_SECONDS: int = _settings.checkin_cooldown_seconds
 
 CHECKIN_SUCCESS = "SUCCESS"

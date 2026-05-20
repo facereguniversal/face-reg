@@ -1,8 +1,8 @@
 """Shared pytest configuration and fixtures for the Face-Reg Service."""
 
 from __future__ import annotations
-
 import asyncio
+import os
 import sys
 from pathlib import Path
 from typing import AsyncGenerator
@@ -21,12 +21,8 @@ from api.main import app  # noqa: E402
 from api.models.db_models import Base  # noqa: E402
 from api.services.database import get_db  # noqa: E402
 
-import os
-
 # Default to in-memory SQLite for fast CI-friendly tests; override with TEST_DATABASE_URL for Postgres parity.
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:"
-)
+TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 engine = create_async_engine(TEST_DATABASE_URL, echo=False)
 TestingSessionLocal = sessionmaker(
