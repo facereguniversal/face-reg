@@ -1,0 +1,15 @@
+# Set DOMAIN in deploy/.env.production.
+#
+# Self-signed / lab (no public DNS):
+#   DOMAIN=localhost
+#   Keep `tls internal` below — browsers will warn; use for VM IP demos.
+#
+# Public domain (Let's Encrypt):
+#   DOMAIN=faces.example.com
+#   DNS A/AAAA must point at this VM; open ports 80 and 443.
+#   Delete or comment out the `tls internal` line — Caddy obtains certs automatically.
+
+{$DOMAIN:localhost} {
+	tls internal
+	reverse_proxy api:8000
+}

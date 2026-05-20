@@ -5,7 +5,9 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+
+from api.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.jwt_handler import get_current_user
@@ -23,8 +25,11 @@ router = APIRouter()
 
 
 @router.post("/validate", response_model=ValidateResponse)
+@limiter.limit("30/minute")
 async def validate_face(
+    request: Request,
     image: UploadFile = File(..., description="Face image to validate"),
+    _caller: dict[str, Any] = Depends(get_current_user),
     face_svc: FaceService = Depends(get_face_service),
 ):
     """Validate a face image for quality without enrolling."""
