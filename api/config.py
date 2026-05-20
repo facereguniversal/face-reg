@@ -49,7 +49,9 @@ class Settings(BaseSettings):
     checkin_device_tokens: str = Field(default="", alias="CHECKIN_DEVICE_TOKENS")
 
     bootstrap_on_startup: bool = Field(default=False, alias="BOOTSTRAP_ON_STARTUP")
-    bootstrap_admin_name: str = Field(default="Demo Admin", alias="BOOTSTRAP_ADMIN_NAME")
+    bootstrap_admin_name: str = Field(
+        default="Demo Admin", alias="BOOTSTRAP_ADMIN_NAME"
+    )
     bootstrap_admin_email: str | None = Field(
         default=None, alias="BOOTSTRAP_ADMIN_EMAIL"
     )
