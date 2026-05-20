@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Index,
     JSON,
     BigInteger,
     DateTime,
@@ -52,6 +53,7 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     audit_logs: Mapped[list[AuditLog]] = relationship(back_populates="user")
+    checkins: Mapped[list[CheckIn]] = relationship(back_populates="user")
 
 
 class FaceTemplate(Base):
@@ -98,6 +100,33 @@ class Image(Base):
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="images")
+
+
+class CheckIn(Base):
+    """Stateful kiosk check-in event."""
+
+    __tablename__ = "checkins"
+    __table_args__ = (
+        Index("idx_checkins_time", "checkin_time"),
+        Index("idx_checkins_user_time", "user_id", "checkin_time"),
+        Index("idx_checkins_status_time", "status", "checkin_time"),
+        Index("idx_checkins_device_time", "device_or_location_id", "checkin_time"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    checkin_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow
+    )
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    device_or_location_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    user: Mapped[User | None] = relationship(back_populates="checkins")
 
 
 class AuditLog(Base):

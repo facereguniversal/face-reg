@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -12,16 +11,13 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from passlib.exc import UnknownHashError
 
-# ---------------------------------------------------------------------------
-# Configuration (loaded from environment variables)
-# ---------------------------------------------------------------------------
+from api.config import get_settings
 
-SECRET_KEY: str = os.environ.get("SECRET_KEY", "CHANGE_ME_IN_PRODUCTION")
+_settings = get_settings()
+SECRET_KEY: str = _settings.secret_key
 ALGORITHM: str = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
-    os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15")
-)
-REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+ACCESS_TOKEN_EXPIRE_MINUTES: int = _settings.access_token_expire_minutes
+REFRESH_TOKEN_EXPIRE_DAYS: int = _settings.refresh_token_expire_days
 
 pwd_context = CryptContext(
     schemes=["pbkdf2_sha256", "bcrypt"],
@@ -29,11 +25,6 @@ pwd_context = CryptContext(
     deprecated="auto",
 )
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
-
-
-# ---------------------------------------------------------------------------
-# Password helpers
-# ---------------------------------------------------------------------------
 
 
 def hash_password(plain: str) -> str:
@@ -47,11 +38,6 @@ def verify_password(plain: str, hashed: str) -> bool:
         return pwd_context.verify(plain, hashed)
     except (TypeError, ValueError, UnknownHashError):
         return False
-
-
-# ---------------------------------------------------------------------------
-# Token creation
-# ---------------------------------------------------------------------------
 
 
 def _create_token(data: dict[str, Any], expires_delta: timedelta) -> str:
@@ -75,11 +61,6 @@ def create_refresh_token(user_id: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Token validation
-# ---------------------------------------------------------------------------
-
-
 def decode_token(token: str) -> dict[str, Any]:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -89,11 +70,6 @@ def decode_token(token: str) -> dict[str, Any]:
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
-
-
-# ---------------------------------------------------------------------------
-# FastAPI dependency: current authenticated user
-# ---------------------------------------------------------------------------
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any]:
