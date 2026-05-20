@@ -18,3 +18,4 @@ Pillow>=10.3.0
 # Utilities
 pydantic>=2.6.0
 python-multipart>=0.0.9
+prometheus-client>=0.20.0

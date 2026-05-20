@@ -17,9 +17,12 @@ from typing import Any
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import Response
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
 from detect import FaceDetector
+from liveness import LivenessDetector
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +38,22 @@ EMBEDDING_DIM = 512
 # ---------------------------------------------------------------------------
 app = FastAPI(title="Model Server", version="0.1.0")
 
+embed_requests_total = Counter(
+    "model_embed_requests_total",
+    "Total /embed requests processed",
+)
+faiss_vectors_gauge = Gauge(
+    "model_faiss_vectors",
+    "Number of vectors stored in the FAISS index",
+)
+liveness_mode_gauge = Gauge(
+    "model_liveness_mode_info",
+    "Liveness detector mode (1=active label)",
+    ["mode"],
+)
+
 detector = FaceDetector()
+liveness_detector = LivenessDetector()
 embedding_model: Any = None
 faiss_index: Any = None
 id_map: dict[int, str] = {}  # FAISS internal id → face_template UUID
@@ -166,6 +184,9 @@ class EmbedResult(BaseModel):
     quality: float
     valid: bool
     issues: list[str] = []
+    liveness_score: float | None = None
+    liveness_passed: bool | None = None
+    liveness_mode: str | None = None
 
 
 class SearchRequest(BaseModel):
@@ -201,9 +222,19 @@ def _compute_quality(aligned: np.ndarray) -> float:
 # ---------------------------------------------------------------------------
 
 
+@app.get("/metrics")
+async def metrics():
+    """Prometheus scrape endpoint (internal network only)."""
+    if faiss_index is not None:
+        faiss_vectors_gauge.set(faiss_index.ntotal)
+    liveness_mode_gauge.labels(mode=liveness_detector.mode).set(1)
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.post("/embed")
 async def embed(images: list[UploadFile] = File(...)):
     """Detect, align, and extract embeddings from uploaded images."""
+    embed_requests_total.inc()
     results: list[dict[str, Any]] = []
     for img_file in images:
         data = await img_file.read()
@@ -215,6 +246,9 @@ async def embed(images: list[UploadFile] = File(...)):
                     "quality": 0.0,
                     "valid": False,
                     "issues": ["no_face_detected"],
+                    "liveness_score": None,
+                    "liveness_passed": None,
+                    "liveness_mode": liveness_detector.mode,
                 }
             )
             continue
@@ -222,6 +256,18 @@ async def embed(images: list[UploadFile] = File(...)):
         face = detections[0]
         aligned = face["aligned"]
         quality = _compute_quality(aligned)
+        liveness = liveness_detector.analyze(aligned)
+        if not liveness["liveness_passed"]:
+            results.append(
+                {
+                    "embedding": [0.0] * EMBEDDING_DIM,
+                    "quality": quality,
+                    "valid": False,
+                    "issues": ["spoof_detected"],
+                    **liveness,
+                }
+            )
+            continue
         emb = _extract_embedding(aligned)
         if emb is None:
             results.append(
@@ -230,11 +276,18 @@ async def embed(images: list[UploadFile] = File(...)):
                     "quality": quality,
                     "valid": False,
                     "issues": ["invalid_embedding"],
+                    **liveness,
                 }
             )
             continue
         results.append(
-            {"embedding": emb, "quality": quality, "valid": True, "issues": []}
+            {
+                "embedding": emb,
+                "quality": quality,
+                "valid": True,
+                "issues": [],
+                **liveness,
+            }
         )
     return {"results": results}
 
@@ -290,7 +343,12 @@ async def health():
         if embedding_model and embedding_model != "placeholder"
         else "fallback"
     )
-    return {"status": "ok", "index_size": total, "mode": mode}
+    return {
+        "status": "ok",
+        "index_size": total,
+        "mode": mode,
+        "liveness_mode": liveness_detector.mode,
+    }
 
 
 if __name__ == "__main__":

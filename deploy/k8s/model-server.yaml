@@ -19,6 +19,25 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8001
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
           env:
             - name: FAISS_INDEX_PATH
               value: "/data/faiss.index"

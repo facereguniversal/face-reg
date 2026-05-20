@@ -5,11 +5,19 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth.authorization import require_self_or_admin
 from api.auth.jwt_handler import get_current_user, require_admin
-from api.models.schemas import UserCreate, UserResponse, EnrollResponse
+from api.models.db_models import User
+from api.models.schemas import (
+    EnrollResponse,
+    UserCreate,
+    UserResponse,
+    UserSearchResponse,
+)
+from api.services.checkin_service import CheckInService, checkin_item_from_model
 from api.services.database import get_db
 from api.services.user_service import UserService
 from api.services.face_service import FaceService
@@ -17,6 +25,26 @@ from api.services.dependencies import get_face_service, get_client_ip
 from fastapi import File, UploadFile
 
 router = APIRouter()
+
+
+async def build_user_response(
+    user: User,
+    user_svc: UserService,
+    checkin_svc: CheckInService,
+) -> UserResponse:
+    """Build user response without relying on async lazy relationships."""
+    face_count = await user_svc.count_faces(user.id)
+    last_checkins = await checkin_svc.last_checkins_for_users([user.id])
+    last_checkin = last_checkins.get(user.id)
+    return UserResponse(
+        user_id=user.id,
+        name=user.name,
+        email=user.email,
+        role=user.role,
+        created_at=user.created_at,
+        face_count=face_count,
+        last_checkin=checkin_item_from_model(last_checkin) if last_checkin else None,
+    )
 
 
 @router.post(
@@ -43,30 +71,39 @@ async def create_user(
         user_id=user.id,
         name=user.name,
         email=user.email,
+        role=user.role,
         created_at=user.created_at,
         face_count=0,
+        last_checkin=None,
     )
+
+
+@router.get("", response_model=UserSearchResponse)
+async def search_users(
+    query: str | None = Query(default=None, max_length=255),
+    limit: int = Query(default=20, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    _admin: dict[str, Any] = Depends(require_admin),
+):
+    """Search users for admin dashboard manual override workflows."""
+    checkin_svc = CheckInService(db)
+    users = await checkin_svc.search_users(query=query, limit=limit)
+    return UserSearchResponse(users=users)
 
 
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _caller: dict[str, Any] = Depends(get_current_user),
+    caller: dict[str, Any] = Depends(get_current_user),
 ):
     """Retrieve user metadata."""
+    require_self_or_admin(user_id, caller)
     svc = UserService(db)
     user = await svc.get_by_id(str(user_id))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    face_count = await svc.count_faces(user.id)
-    return UserResponse(
-        user_id=user.id,
-        name=user.name,
-        email=user.email,
-        created_at=user.created_at,
-        face_count=face_count,
-    )
+    return await build_user_response(user, svc, CheckInService(db))
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -91,17 +128,18 @@ async def delete_user(
 )
 async def enroll_faces(
     user_id: uuid.UUID,
-    images: list[UploadFile] = File(..., description="4-6 face images"),
+    images: list[UploadFile] = File(..., description="3-5 face images"),
     db: AsyncSession = Depends(get_db),
-    _caller: dict[str, Any] = Depends(get_current_user),
+    caller: dict[str, Any] = Depends(get_current_user),
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
     """Upload face images to enroll embeddings for a user."""
-    if len(images) < 4:
-        raise HTTPException(status_code=400, detail="At least 4 images required")
-    if len(images) > 6:
-        raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
+    require_self_or_admin(user_id, caller)
+    if len(images) < 3:
+        raise HTTPException(status_code=400, detail="At least 3 images required")
+    if len(images) > 5:
+        raise HTTPException(status_code=400, detail="Maximum 5 images allowed")
 
     user_svc = UserService(db)
     user = await user_svc.get_by_id(str(user_id))

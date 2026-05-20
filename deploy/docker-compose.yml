@@ -35,6 +35,11 @@ services:
       DATABASE_URL: "postgresql+asyncpg://faceuser:facepass@db:5432/facedb"
       SECRET_KEY: "local-dev-secret-change-in-prod"
       MODEL_SERVER_URL: "http://model_server:8001"
+      CHECKIN_DEVICE_TOKENS: "demo-kiosk:demo-token"
+      CHECKIN_SIMILARITY_THRESHOLD: "0.6"
+      CHECKIN_COOLDOWN_SECONDS: "300"
+      ENVIRONMENT: development
+      ENABLE_DEMO_UI: "true"
       BOOTSTRAP_ON_STARTUP: "true"
       BOOTSTRAP_ADMIN_NAME: "Demo Admin"
       BOOTSTRAP_ADMIN_EMAIL: "admin@example.com"
@@ -45,11 +50,12 @@ services:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()\"",
+          "python -c \"import urllib.error, urllib.request;\\ntry:\\n r=urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\\nexcept urllib.error.HTTPError as e:\\n r=e\\nexit(0 if r.status==200 else 1)\"",
         ]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 60s
 
   # -----------------------------------------------------------------------
   # Model Server (ML inference + FAISS)
@@ -62,6 +68,7 @@ services:
     environment:
       FAISS_INDEX_PATH: /data/faiss.index
       FAISS_MAP_PATH: /data/faiss_id_map.json
+      LIVENESS_THRESHOLD: "0.5"
     volumes:
       - model_data:/data
     healthcheck:

@@ -6,11 +6,13 @@ A demo-ready face recognition stack built with FastAPI, InsightFace/ArcFace, FAI
 
 ## What Works
 
-- `POST /api/users/{id}/faces` enrolls 4 to 6 images per user.
+- `POST /api/users/{id}/faces` enrolls 3 to 5 images into one averaged template.
+- `POST /api/checkin` records kiosk check-in events with device-token auth.
+- `GET /api/checkins/live` and `/api/checkins/live/ws` power a live admin feed.
 - `POST /api/identify` performs 1:N search against enrolled templates.
 - `POST /api/verify` performs 1:1 verification against a target user.
 - `POST /api/faces/validate` checks image quality and rejects non-embeddable inputs.
-- `/demo/capture/` and `/demo/checkin/` serve the browser demos from the API host.
+- `/demo/capture/`, `/demo/checkin/`, and `/demo/admin/` serve the browser demos from the API host.
 - Docker Compose seeds a demo admin account on startup so login works without manual DB edits.
 
 ## Project Layout
@@ -50,6 +52,7 @@ Available URLs:
 - Health: `http://localhost:8000/api/health`
 - Capture demo: `http://localhost:8000/demo/capture/`
 - Check-in demo: `http://localhost:8000/demo/checkin/`
+- Admin dashboard: `http://localhost:8000/demo/admin/`
 
 Seeded demo admin:
 
@@ -70,6 +73,30 @@ Stop and clean up:
 docker compose -f deploy/docker-compose.yml down
 docker compose -f deploy/docker-compose.yml down -v
 ```
+
+## Deploy to production (single VM)
+
+Hardened Docker Compose stack: TLS (Caddy), Prometheus, Grafana. Full guide: **[docs/production.md](docs/production.md)**.
+
+```bash
+cd deploy
+cp .env.production.example .env.production
+# Edit DOMAIN, POSTGRES_PASSWORD, DATABASE_URL, SECRET_KEY, CORS_ORIGINS, CHECKIN_DEVICE_TOKENS, GRAFANA_ADMIN_PASSWORD
+chmod +x scripts/*.sh
+./scripts/bootstrap-production.sh    # validates env, builds, starts stack
+./scripts/seed-admin.sh            # first admin (bootstrap is off in prod)
+```
+
+Or manually:
+
+```bash
+./scripts/validate-env.sh
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+```
+
+- API is only on **HTTPS :443** via Caddy (not host port 8000).
+- Demo UIs: off by default; set `ENABLE_DEMO_UI=true` for hotel kiosk demo (see production doc).
+- Firewall: allow **443** (and **80** for Let's Encrypt); keep Grafana on **127.0.0.1:3000**.
 
 ## Demo Bootstrap
 
@@ -106,7 +133,7 @@ Optional seed file format:
 }
 ```
 
-The demo UIs read the API host from `window.location.origin`, so they work from a remote browser against a single VM without editing frontend code.
+The demo UIs read the API host from `window.location.origin`, so they work from a remote browser against a single VM without editing frontend code. Capture and admin accept a `token` query parameter for demo-only admin auth. Check-in accepts `deviceId` and `deviceToken` query parameters and defaults to the Compose demo kiosk.
 
 ## API Summary
 
@@ -118,6 +145,7 @@ Authentication:
 Users:
 
 - `POST /api/users`
+- `GET /api/users?query=&limit=`
 - `GET /api/users/{user_id}`
 - `DELETE /api/users/{user_id}`
 
@@ -130,6 +158,10 @@ Faces:
 
 Recognition:
 
+- `POST /api/checkin`
+- `GET /api/checkins/live`
+- `WS /api/checkins/live/ws`
+- `POST /api/checkins/manual`
 - `POST /api/identify`
 - `POST /api/identify/batch`
 - `POST /api/verify`
@@ -169,6 +201,7 @@ Required environment variables:
 export DATABASE_URL="postgresql+asyncpg://faceuser:facepass@localhost:5432/facedb"
 export SECRET_KEY="your-secret-key-here"
 export MODEL_SERVER_URL="http://localhost:8001"
+export CHECKIN_DEVICE_TOKENS="demo-kiosk:demo-token"
 ```
 
 Run the services from the repo root:
@@ -205,5 +238,5 @@ docker build -f deploy/Dockerfile.model -t face-model:ci .
 
 - [Architecture](docs/architecture.md)
 - [API Reference](docs/api_reference.md)
+- [Production deployment](docs/production.md)
 - [Contributing Guidelines](docs/contrib_guidelines.md)
-- [Implementation Plan](implementation_plan.md)

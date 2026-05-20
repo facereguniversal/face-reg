@@ -59,6 +59,23 @@ CREATE INDEX idx_face_templates_user ON face_templates (user_id);
 -- CREATE INDEX idx_face_templates_embedding ON face_templates USING ivfflat (embedding vector_cosine_ops);
 
 -- --------------------------------------------------------------------------
+-- Check-ins
+-- --------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS checkins (
+    id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id               UUID            REFERENCES users(id) ON DELETE SET NULL,
+    checkin_time          TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    status                VARCHAR(50)     NOT NULL,
+    device_or_location_id VARCHAR(255)    NOT NULL,
+    confidence_score      FLOAT
+);
+
+CREATE INDEX idx_checkins_time   ON checkins (checkin_time DESC);
+CREATE INDEX idx_checkins_user_time ON checkins (user_id, checkin_time DESC);
+CREATE INDEX idx_checkins_status_time ON checkins (status, checkin_time DESC);
+CREATE INDEX idx_checkins_device_time ON checkins (device_or_location_id, checkin_time DESC);
+
+-- --------------------------------------------------------------------------
 -- Audit Logs (append-only)
 -- --------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS audit_logs (
