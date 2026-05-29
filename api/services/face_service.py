@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from collections.abc import Iterable
 from typing import Any
 
 import httpx
@@ -68,7 +67,7 @@ class FaceService:
     async def _get_embeddings(self, image_data: list[bytes]) -> list[dict[str, Any]]:
         """Send images to model server, receive embeddings + quality scores."""
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 files = [
                     ("images", (f"face_{i}.jpg", data, "image/jpeg"))
                     for i, data in enumerate(image_data)
@@ -80,37 +79,7 @@ class FaceService:
             model_server_errors_total.inc()
             raise
 
-    async def _index_embeddings(
-        self, items: Iterable[tuple[uuid.UUID, list[float]]]
-    ) -> None:
-        """Add the provided embeddings to the model server FAISS index."""
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                for face_id, embedding in items:
-                    resp = await client.post(
-                        f"{MODEL_SERVER_URL}/index",
-                        json={"face_id": str(face_id), "embedding": embedding},
-                    )
-                    resp.raise_for_status()
-        except Exception:
-            model_server_errors_total.inc()
-            raise
-
-    async def _search(
-        self, embedding: list[float], top_k: int = 5
-    ) -> list[dict[str, Any]]:
-        """Query model server FAISS index for nearest neighbours."""
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
-                    f"{MODEL_SERVER_URL}/search",
-                    json={"embedding": embedding, "top_k": top_k},
-                )
-                resp.raise_for_status()
-                return resp.json()["results"]
-        except Exception:
-            model_server_errors_total.inc()
-            raise
+    # _index_embeddings and _search were removed in favor of pgvector
 
     @staticmethod
     def _is_non_zero_embedding(embedding: list[float] | None) -> bool:
@@ -187,7 +156,6 @@ class FaceService:
         quality_scores: list[float] = [
             float(item.get("quality", 0.0)) for item in valid_results
         ]
-        items_to_index: list[tuple[uuid.UUID, list[float]]] = []
 
         embeddings = np.array(
             [item["embedding"] for item in valid_results], dtype=np.float32
@@ -210,10 +178,8 @@ class FaceService:
         )
         db.add(template)
         template_ids.append(tid)
-        items_to_index.append((tid, averaged.tolist()))
 
         await db.flush()
-        await self._index_embeddings(items_to_index)
         await audit_svc.log_action(
             user_id=user_id,
             action="FACE_ENROLL",
@@ -256,28 +222,31 @@ class FaceService:
             return IdentifyResponse(matches=[], latency_ms=round(latency, 1))
 
         embedding = first["embedding"]
-        search_results = await self._search(embedding)
+
+        # Search using pgvector cosine_distance (<=>)
+        # Cosine distance = 1 - Cosine similarity
+        max_distance = 1.0 - SIMILARITY_THRESHOLD
+
+        stmt = (
+            select(FaceTemplate, User, FaceTemplate.embedding.cosine_distance(embedding).label("distance"))
+            .join(User, FaceTemplate.user_id == User.id)
+            .where(FaceTemplate.embedding.cosine_distance(embedding) <= max_distance)
+            .order_by("distance")
+            .limit(5)
+        )
+
+        rows = (await db.execute(stmt)).all()
 
         matches: list[MatchResult] = []
-        for hit in search_results:
-            if hit["score"] < SIMILARITY_THRESHOLD:
-                continue
-            # Resolve user from face template
-            stmt = (
-                select(FaceTemplate, User)
-                .join(User, FaceTemplate.user_id == User.id)
-                .where(FaceTemplate.id == uuid.UUID(hit["face_id"]))
-            )
-            row = (await db.execute(stmt)).first()
-            if row:
-                tpl, user = row
-                matches.append(
-                    MatchResult(
-                        user_id=user.id,
-                        name=user.name,
-                        score=round(hit["score"], 4),
-                    )
+        for tpl, user, distance in rows:
+            score = 1.0 - float(distance)
+            matches.append(
+                MatchResult(
+                    user_id=user.id,
+                    name=user.name,
+                    score=round(score, 4),
                 )
+            )
 
         audit_svc = AuditService(db)
         await audit_svc.log_action(

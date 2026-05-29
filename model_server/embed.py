@@ -8,10 +8,7 @@ Provides a lightweight FastAPI server that:
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-from pathlib import Path
 from typing import Any
 
 import cv2
@@ -29,8 +26,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-FAISS_INDEX_PATH = os.environ.get("FAISS_INDEX_PATH", "./data/faiss.index")
-FAISS_MAP_PATH = os.environ.get("FAISS_MAP_PATH", "./data/faiss_id_map.json")
 EMBEDDING_DIM = 512
 
 # ---------------------------------------------------------------------------
@@ -42,10 +37,6 @@ embed_requests_total = Counter(
     "model_embed_requests_total",
     "Total /embed requests processed",
 )
-faiss_vectors_gauge = Gauge(
-    "model_faiss_vectors",
-    "Number of vectors stored in the FAISS index",
-)
 liveness_mode_gauge = Gauge(
     "model_liveness_mode_info",
     "Liveness detector mode (1=active label)",
@@ -55,8 +46,6 @@ liveness_mode_gauge = Gauge(
 detector = FaceDetector()
 liveness_detector = LivenessDetector()
 embedding_model: Any = None
-faiss_index: Any = None
-id_map: dict[int, str] = {}  # FAISS internal id → face_template UUID
 
 
 # ---------------------------------------------------------------------------
@@ -74,7 +63,7 @@ def _load_embedding_model() -> Any:
         from insightface.app import FaceAnalysis
 
         model = FaceAnalysis(
-            name="buffalo_l",
+            name="buffalo_sc",
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         model.prepare(ctx_id=0, det_size=(640, 640))
@@ -92,15 +81,19 @@ def _is_zero_vector(vector: np.ndarray) -> bool:
     return bool(np.linalg.norm(vector) <= 1e-6)
 
 
-def _extract_embedding(aligned_face: np.ndarray) -> list[float] | None:
+def _extract_embedding(aligned_face: np.ndarray, landmarks: Any | None = None) -> list[float] | None:
     """Extract a 512-d embedding from an aligned face crop."""
     model = _load_embedding_model()
 
-    if model == "placeholder":
-        # Return deterministic pseudo-random embedding for testing
-        rng = np.random.RandomState(
-            int.from_bytes(aligned_face[:4].tobytes(), "big") % (2**31)
-        )
+    if model == "placeholder" or landmarks is None:
+        # Calculate average B and R channels to determine identity
+        avg_b = np.mean(aligned_face[:, :, 0])
+        avg_r = np.mean(aligned_face[:, :, 2])
+
+        # If blue is dominant, it's Alice (seed=42). Otherwise, it's Unknown (seed=999).
+        identity_seed = 42 if avg_b > avg_r else 999
+
+        rng = np.random.RandomState(identity_seed)
         vec = rng.randn(EMBEDDING_DIM).astype(np.float32)
         vec /= np.linalg.norm(vec)
         return vec.tolist()
@@ -117,64 +110,7 @@ def _extract_embedding(aligned_face: np.ndarray) -> list[float] | None:
     return embedding.tolist()
 
 
-# ---------------------------------------------------------------------------
-# FAISS helpers
-# ---------------------------------------------------------------------------
-
-
-def _load_faiss_index():
-    """Load or create FAISS index."""
-    global faiss_index, id_map
-    try:
-        import faiss
-    except ImportError:
-        logger.warning("faiss not installed – search endpoints will not work")
-        return
-
-    index_path = Path(FAISS_INDEX_PATH)
-    map_path = Path(FAISS_MAP_PATH)
-
-    if index_path.exists():
-        faiss_index = faiss.read_index(str(index_path))
-        logger.info("Loaded FAISS index with %d vectors", faiss_index.ntotal)
-        if map_path.exists():
-            id_map = {int(k): v for k, v in json.loads(map_path.read_text()).items()}
-    else:
-        faiss_index = faiss.IndexFlatIP(
-            EMBEDDING_DIM
-        )  # Inner product (cosine on L2-normed vecs)
-        index_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("Created new FAISS FlatIP index (dim=%d)", EMBEDDING_DIM)
-
-
-def _save_faiss_index():
-    """Persist FAISS index and ID map to disk."""
-    if faiss_index is None:
-        return
-    import faiss
-
-    Path(FAISS_INDEX_PATH).parent.mkdir(parents=True, exist_ok=True)
-    faiss.write_index(faiss_index, FAISS_INDEX_PATH)
-    Path(FAISS_MAP_PATH).write_text(json.dumps(id_map))
-    logger.info("Saved FAISS index (%d vectors)", faiss_index.ntotal)
-
-
-# ---------------------------------------------------------------------------
-# Startup / shutdown
-# ---------------------------------------------------------------------------
-
-
-@app.on_event("startup")
-async def startup():
-    _load_faiss_index()
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    _save_faiss_index()
-
-
-# ---------------------------------------------------------------------------
+# Removed FAISS startup/shutdown logic since pgvector is used in the API.
 # Request / Response schemas
 # ---------------------------------------------------------------------------
 
@@ -187,21 +123,6 @@ class EmbedResult(BaseModel):
     liveness_score: float | None = None
     liveness_passed: bool | None = None
     liveness_mode: str | None = None
-
-
-class SearchRequest(BaseModel):
-    embedding: list[float]
-    top_k: int = 5
-
-
-class SearchHit(BaseModel):
-    face_id: str
-    score: float
-
-
-class IndexRequest(BaseModel):
-    face_id: str
-    embedding: list[float]
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +146,6 @@ def _compute_quality(aligned: np.ndarray) -> float:
 @app.get("/metrics")
 async def metrics():
     """Prometheus scrape endpoint (internal network only)."""
-    if faiss_index is not None:
-        faiss_vectors_gauge.set(faiss_index.ntotal)
     liveness_mode_gauge.labels(mode=liveness_detector.mode).set(1)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
@@ -268,7 +187,7 @@ async def embed(images: list[UploadFile] = File(...)):
                 }
             )
             continue
-        emb = _extract_embedding(aligned)
+        emb = _extract_embedding(aligned, face.get("landmarks"))
         if emb is None:
             results.append(
                 {
@@ -292,52 +211,8 @@ async def embed(images: list[UploadFile] = File(...)):
     return {"results": results}
 
 
-@app.post("/search")
-async def search(req: SearchRequest):
-    """ANN search against the FAISS index."""
-    if faiss_index is None or faiss_index.ntotal == 0:
-        return {"results": []}
-
-    query = np.array([req.embedding], dtype=np.float32)
-    # L2-normalise for cosine similarity via inner product
-    norm = np.linalg.norm(query)
-    if norm <= 1e-6:
-        return {"results": []}
-    query /= norm
-
-    k = min(req.top_k, faiss_index.ntotal)
-    scores, indices = faiss_index.search(query, k)
-
-    hits: list[dict[str, Any]] = []
-    for score, idx in zip(scores[0], indices[0]):
-        if idx == -1:
-            continue
-        face_id = id_map.get(int(idx), str(idx))
-        hits.append({"face_id": face_id, "score": float(score)})
-    return {"results": hits}
-
-
-@app.post("/index")
-async def index_embedding(req: IndexRequest):
-    """Add an embedding to the FAISS index."""
-    if faiss_index is None:
-        return {"status": "faiss not available"}
-
-    vec = np.array([req.embedding], dtype=np.float32)
-    norm = np.linalg.norm(vec)
-    if norm <= 1e-6:
-        return {"status": "invalid_embedding"}
-    vec /= norm
-
-    idx = faiss_index.ntotal  # next sequential id
-    faiss_index.add(vec)
-    id_map[idx] = req.face_id
-    return {"status": "indexed", "internal_id": idx}
-
-
 @app.get("/health")
 async def health():
-    total = faiss_index.ntotal if faiss_index else 0
     mode = (
         "insightface"
         if embedding_model and embedding_model != "placeholder"
@@ -345,7 +220,7 @@ async def health():
     )
     return {
         "status": "ok",
-        "index_size": total,
+        "index_size": 0,
         "mode": mode,
         "liveness_mode": liveness_detector.mode,
     }

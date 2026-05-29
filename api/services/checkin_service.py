@@ -344,26 +344,35 @@ class CheckInService:
         return latest
 
     async def _best_match(self, embedding: list[float]) -> MatchCandidate | None:
-        search_results = await self.face_svc._search(embedding, top_k=5)  # type: ignore[union-attr]
-        best: MatchCandidate | None = None
-        for hit in search_results:
-            try:
-                face_id = uuid.UUID(hit["face_id"])
-            except (KeyError, ValueError, TypeError):
-                continue
-            stmt = (
-                select(FaceTemplate, User)
-                .join(User, FaceTemplate.user_id == User.id)
-                .where(FaceTemplate.id == face_id)
-            )
-            row = (await self.db.execute(stmt)).first()
-            if not row:
-                continue
-            _template, user = row
-            score = float(hit.get("score") or 0.0)
-            if best is None or score > best.score:
-                best = MatchCandidate(user=user, score=score)
-        return best
+        # SQLite in-memory fallback for local CI/CD and unit tests
+        is_sqlite = "sqlite" in str(self.db.bind.url) if self.db.bind else False
+        if is_sqlite:
+            stmt = select(FaceTemplate, User).join(User, FaceTemplate.user_id == User.id)
+            rows = (await self.db.execute(stmt)).all()
+            if not rows:
+                return None
+            best_candidate = None
+            best_score = -1.0
+            for tpl, user in rows:
+                if tpl.embedding:
+                    score = FaceService._cosine_similarity(embedding, tpl.embedding)
+                    if score > best_score:
+                        best_score = score
+                        best_candidate = MatchCandidate(user=user, score=score)
+            return best_candidate
+
+        stmt = (
+            select(FaceTemplate, User, FaceTemplate.embedding.cosine_distance(embedding).label("distance"))
+            .join(User, FaceTemplate.user_id == User.id)
+            .order_by("distance")
+            .limit(1)
+        )
+        row = (await self.db.execute(stmt)).first()
+        if not row:
+            return None
+        tpl, user, distance = row
+        score = 1.0 - float(distance)
+        return MatchCandidate(user=user, score=score)
 
     async def _recent_checkin(self, user_id: uuid.UUID) -> CheckIn | None:
         cutoff = datetime.now(timezone.utc) - timedelta(

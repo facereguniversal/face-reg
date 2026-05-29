@@ -3,7 +3,7 @@ services:
   # PostgreSQL
   # -----------------------------------------------------------------------
   db:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: faceuser
@@ -58,7 +58,7 @@ services:
       start_period: 60s
 
   # -----------------------------------------------------------------------
-  # Model Server (ML inference + FAISS)
+  # Model Server (ML inference)
   # -----------------------------------------------------------------------
   model_server:
     build:
@@ -66,8 +66,6 @@ services:
       dockerfile: deploy/Dockerfile.model
     restart: unless-stopped
     environment:
-      FAISS_INDEX_PATH: /data/faiss.index
-      FAISS_MAP_PATH: /data/faiss_id_map.json
       LIVENESS_THRESHOLD: "0.5"
     volumes:
       - model_data:/data

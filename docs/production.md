@@ -1,119 +1,129 @@
-# Production deployment (Docker Compose)
+# Production Deployment Guide (Kubernetes HA & Docker Compose)
 
-Single-VM production stack: API + model server + PostgreSQL, TLS via Caddy, Prometheus + Grafana.
+This guide details the procedures for deploying the Face Recognition stack into highly available, production-grade environments. To scale reliably to 10,000+ daily users, our primary deployment target is **Kubernetes**, which manages container orchestration, automatic horizontal scaling, TLS termination, and distributed rate limiting. 
 
-## 5-minute deploy (fresh Ubuntu VM)
+A secondary, hardened **Docker Compose** configuration is also supported for local staging and single-VM hosting.
+
+---
+
+## 1. Primary Path: Highly Available Kubernetes
+
+Deploying the stack to Kubernetes (EKS, GKE, AKS, or bare-metal) ensures high availability (HA) with automatic failover, AZ distribution, and horizontal autoscaling.
+
+```mermaid
+flowchart TD
+    Client[Clients] --> Ingress[NGINX Ingress Controller]
+    Ingress -->|TLS Terminated / Routing| API[FastAPI Deployment Replicas]
+    API -->|Distributed Rate Limits| Redis[(Redis Pod)]
+    API -->|Stateless Embeddings| ML[Model Server Replicas]
+    API -->|SQL + Vector Cosine Search| DB[(PostgreSQL + pgvector)]
+```
+
+### Deploying the Manifests
+Kubernetes manifests are organized under `deploy/k8s/`.
+
+1. **Database & Caching Foundation**
+   Ensure your target PostgreSQL database has the `pgvector` extension enabled. If you are not utilizing a managed database service (e.g., AWS RDS, GKE Cloud SQL), configure an in-cluster HA database.
+   
+   Deploy the Redis service for distributed rate-limiting:
+   ```bash
+   kubectl apply -f deploy/k8s/redis.yaml
+   ```
+
+2. **Secrets Configuration**
+   Populate your production credentials (e.g., `DATABASE_URL`, `SECRET_KEY`, `CHECKIN_DEVICE_TOKENS`) in `deploy/k8s/secrets.yaml`. (Integrations with external systems like *External Secrets Operator*, AWS Secrets Manager, or GKE Secret Manager are recommended). Apply the secrets:
+   ```bash
+   kubectl apply -f deploy/k8s/secrets.yaml
+   ```
+
+3. **Deploy Stateless API & ML inference services**
+   Deploy the services and their corresponding Horizontal Pod Autoscalers (HPAs):
+   ```bash
+   # Deploy stateless ML server
+   kubectl apply -f deploy/k8s/model-server.yaml
+   kubectl apply -f deploy/k8s/model-server-hpa.yaml
+   
+   # Deploy API Gateway
+   kubectl apply -f deploy/k8s/api.yaml
+   kubectl apply -f deploy/k8s/api-hpa.yaml
+   ```
+
+4. **Ingress and TLS Setup**
+   Ensure an NGINX Ingress Controller is active in your cluster. Install **cert-manager** to handle automated Let's Encrypt TLS certificate provisioning. Then deploy the ingress manifest:
+   ```bash
+   kubectl apply -f deploy/k8s/ingress.yaml
+   ```
+   This terminates TLS at the ingress layer and applies maximum body constraints (`10MB`) to protect the gateways from excessively large image uploads.
+
+---
+
+## 2. Secondary Path: Single-VM Hardened Docker Compose
+
+For rapid hosting, local staging, or single-host environments, deploy the hardened, TLS-enabled Docker Compose stack:
 
 ```bash
-# 1. Install Docker (https://docs.docker.com/engine/install/ubuntu/)
-sudo apt-get update && sudo apt-get install -y ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin git
+# 1. Clone repo & navigate to deploy directory
+git clone <repo-url> && cd face-reg/deploy
 
-# 2. Clone and configure
-git clone <your-repo-url> face-reg && cd face-reg/deploy
+# 2. Configure production variables
 cp .env.production.example .env.production
-${EDITOR:-nano} .env.production   # set DOMAIN, passwords, CORS_ORIGINS, CHECKIN_DEVICE_TOKENS
+nano .env.production # Set domain, passwords, secret key
 
-# 3. Validate and start
+# 3. Validate variables & bootstrap stack (validates env, builds containers, starts services)
 chmod +x scripts/*.sh
 ./scripts/bootstrap-production.sh
 
-# 4. First admin (bootstrap is off in production)
+# 4. Seed the initial admin account (startup bootstrapping is disabled in production)
 ./scripts/seed-admin.sh
 ```
 
-One-liner after editing `.env.production`:
+---
 
+## 3. High Availability & Scaling Configurations
+
+### Horizontal Scaling & Az Anti-Affinity
+Both the `api` and `model-server` deployments are configured for High Availability:
+- **Min Replicas**: `2` (scales automatically based on demand).
+- **Topology Spread Constraints**: Configured to spread pods across different Availability Zones (AZs) or nodes to prevent a single node failure from causing downtime.
+- **Resource Requests & Limits**: Defined strictly to avoid resource starvation, especially for the heavy ML inference workloads (`model-server` replicas).
+
+### Auto-Autoscaling Metrics
+- **API Gateways**: Scale horizontally based on CPU utilization (targets `70% CPU`).
+- **ML Inference Servers**: Scale horizontally based on Memory utilization (targets `80% Memory`), absorbing heavy batch inference demands.
+
+---
+
+## 4. Operational Runbook
+
+### Health Auditing
+- **Global Check**: `GET /api/health` returns status metrics of PostgreSQL, Redis connectivity, and the Model Server endpoint.
+- **Service-Level Probes**: Kubernetes deployments utilize:
+  - **Liveness Probes**: Check container viability at `/api/health` or TCP ports.
+  - **Readiness Probes**: Validate database connection availability before routing traffic to the pod.
+
+### Distributed Rate Limiting
+Endpoint rate limiting is enforced via `slowapi` using a **Redis** storage backend. This keeps rate-limiting buckets perfectly synchronized across multiple API replicas, blocking brute-force login and check-in spam globally.
+- **Login Endpoint**: Max 10 requests per minute.
+- **Kiosk Check-In & Validation**: Max 30 requests per minute.
+
+### Unified Relational & Vector Backups
+Because similarity search was migrated from FAISS to **pgvector**, stateful file snapshots are completely deprecated. **All face templates and 512-dimensional vector embeddings reside natively in the PostgreSQL database cluster.**
+
+Dumping the database captures all biometric states instantly:
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d --build
+# Backup
+docker compose exec db pg_dump -U faceuser facedb > backup_facedb_$(date +%F).sql
+
+# Restore
+psql -U faceuser facedb < backup_facedb_yourdate.sql
 ```
+> [!TIP]
+> Standard database replication, automated snapshots, and Point-In-Time Recovery (PITR) systems natively backup and protect all face embeddings.
 
-## Prerequisites
-
-- Docker Engine 24+ with Compose v2 (`docker compose`)
-- Copy `deploy/.env.production.example` → `deploy/.env.production` (never commit the latter)
-- **Firewall (minimum):** allow inbound `443` (and `80` for ACME redirects). Grafana is `127.0.0.1:3000` only — use SSH tunnel (`ssh -L 3000:127.0.0.1:3000 user@vm`) or VPN; do not expose 3000 publicly.
-
-## Required environment variables
-
-See `deploy/.env.production.example`. Run `./scripts/validate-env.sh` before deploy.
-
-Production API startup **fails fast** when:
-
-- `SECRET_KEY` is missing or still a placeholder/default
-- `BOOTSTRAP_ON_STARTUP=true`
-- `CORS_ORIGINS` contains `*` or is empty
-
-Compose also requires `POSTGRES_PASSWORD`, `DATABASE_URL`, `CHECKIN_DEVICE_TOKENS`, and `GRAFANA_ADMIN_PASSWORD` to be set (see prod compose file).
-
-## TLS: self-signed vs public domain
-
-| Mode | `DOMAIN` | `deploy/Caddyfile` |
-|------|----------|-------------------|
-| Lab / IP demo | `localhost` or hostname | Keep `tls internal` (browser warning; use `curl -k`) |
-| Public HTTPS | `faces.example.com` with DNS → VM | **Remove** the `tls internal` line; Caddy obtains Let's Encrypt certs (ports 80+443 open) |
-
-`DOMAIN` is passed to the Caddy container and used as the site address.
-
-## Hotel / kiosk demo UIs
-
-Browser demos (`/demo/capture/`, `/demo/checkin/`, `/demo/admin/`) are **disabled** when `ENABLE_DEMO_UI=false` (default).
-
-For an on-VM hotel demo served through Caddy on the same domain:
-
-1. Set `ENABLE_DEMO_UI=true` in `.env.production`
-2. Set `CORS_ORIGINS=https://<your-domain>` (must match browser origin)
-3. Redeploy; open `https://<domain>/demo/checkin/?deviceId=...&deviceToken=...`
-
-Alternatively host `ingestion/*_ui/` as static files on another origin and point them at `https://<domain>/api`.
-
-## Operations
-
-### Health checks
-
-- `GET /api/health` returns **200** when database and model server are healthy, **503** when degraded.
-- Compose/Docker healthchecks treat **503 as unhealthy** (expected for orchestration).
-- Model server (internal): `GET http://model_server:8001/health`
-
-### Metrics
-
-- API: `http://api:8000/metrics` (Prometheus only; not public)
-- Model server: `http://model_server:8001/metrics`
-- Grafana: `http://127.0.0.1:3000` on the host (`GRAFANA_ADMIN_PASSWORD`)
-
-### Backups
-
-1. **PostgreSQL:** `docker compose exec db pg_dump -U faceuser facedb > backup.sql`
-2. **FAISS index:** snapshot the `model_data` volume
-
-### Rotating secrets
-
-1. Update `.env.production`
-2. `./scripts/validate-env.sh`
-3. `docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.production up -d`
-
-### Logs
-
-Production services use `json-file` logging with rotation (`max-size` 10m, `max-file` 5).
-
-## Security notes
-
-- `BOOTSTRAP_ON_STARTUP=false` in production compose override
-- Demo UIs off by default (`ENABLE_DEMO_UI=false`)
-- OpenAPI (`/docs`) disabled when `ENVIRONMENT=production`
-- Example env file uses placeholders only — no real passwords
-- Rate limits: login 10/min; check-in and validate 30/min
-
-## Development vs production
-
-| Concern | Dev (`docker-compose.yml`) | Prod (+ `docker-compose.prod.yml`) |
-|--------|----------------------------|-------------------------------------|
-| API port | 8000 published | Only via Caddy 443 |
-| Bootstrap | Enabled | Disabled — use `scripts/seed-admin.sh` |
-| Demo UI | Enabled | Off by default (`ENABLE_DEMO_UI`) |
-| TLS | None | Caddy |
-| Observability | Optional | Prometheus + Grafana |
+### Monitoring & Metrics Scraping
+The production stack includes observability hooks:
+- **Scrape Targets**:
+  - API Gateway metrics: `http://<api-service>:8000/metrics` (Prometheus format)
+  - ML Inference Server metrics: `http://<model-server-service>:8001/metrics`
+- **Kubernetes Integration**: Deploy `ServiceMonitor` resources to automatically register the pods with your Prometheus Operator.
+- **Grafana Visualization**: Access Grafana dashboard to track concurrent user transactions, validation latencies, embedding extraction queues, and database search speeds.

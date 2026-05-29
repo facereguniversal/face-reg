@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     )
     refresh_token_expire_days: int = Field(default=7, alias="REFRESH_TOKEN_EXPIRE_DAYS")
 
-    cors_origins: list[str] = Field(
+    cors_origins: str | list[str] = Field(
         default_factory=lambda: ["*"],
         alias="CORS_ORIGINS",
     )
@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     bootstrap_users_file: str | None = Field(default=None, alias="BOOTSTRAP_USERS_FILE")
 
     enable_demo_ui: bool = Field(default=True, alias="ENABLE_DEMO_UI")
-    trusted_proxy_ips: list[str] = Field(
+    trusted_proxy_ips: str | list[str] = Field(
         default_factory=list, alias="TRUSTED_PROXY_IPS"
     )
 
@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     db_pool_size: int = Field(default=5, alias="DB_POOL_SIZE")
     db_max_overflow: int = Field(default=10, alias="DB_MAX_OVERFLOW")
     db_pool_timeout: int = Field(default=30, alias="DB_POOL_TIMEOUT")
+
+    redis_url: str | None = Field(default=None, alias="REDIS_URL")
 
     @field_validator("cors_origins", "trusted_proxy_ips", mode="before")
     @classmethod
