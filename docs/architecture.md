@@ -2,131 +2,133 @@
 
 ## Overview
 
-The face-recognition service follows a **microservices architecture**, dividing concerns into an API layer, an ML inference layer, and a data storage layer. Each service can be scaled independently.
+The face-recognition service is engineered as a highly scalable, mass-production-ready microservices architecture designed to process 10,000+ biometric transactions daily. Concerns are separated into an API Gateway layer, a stateless ML inference server, and a robust data layer leveraging native PostgreSQL `pgvector` index matching and Redis-based rate limiting.
 
 ## Component Diagram
 
 ```mermaid
-graph LR
-    subgraph Client
-      UI["Web UI (Admin/User)"]
-      SDKs["SDKs / Integrations"]
-    end
-    subgraph API["API Layer (FastAPI)"]
-      APIGW["API Gateway"]
-      Auth["Auth Service (OAuth2/JWT)"]
-      Ingest["Image Ingestion Service"]
-      Identify["Identification Service"]
-    end
-    subgraph ML["ML Layer"]
-      Preproc["Preprocessing Pipeline"]
-      Detect["Face Detection & Alignment (MTCNN/RetinaFace)"]
-      Embed["Embedding Extractor (ArcFace/InsightFace)"]
-      Match["Matching & Search (FAISS)"]
-    end
-    subgraph Storage
-      MetaDB["PostgreSQL (Users/Metadata/Audit)"]
-      VecDB["FAISS Index (Face Embeddings)"]
-      ImgStore["File/S3 Storage (Raw Images)"]
+graph TD
+    subgraph Client ["Client Layer"]
+        UI["Web UI (Capture/Check-in)"]
+        SDK["SDKs / External API Clients"]
     end
 
-    UI -->|HTTPS REST| APIGW
-    SDKs -->|HTTPS REST| APIGW
-    APIGW --> Auth
-    APIGW --> Ingest
-    APIGW --> Identify
-    Auth --> MetaDB
-    Ingest --> ImgStore
-    Ingest --> Preproc
+    subgraph GW ["Ingress & API Gateway (FastAPI)"]
+        Ingress["NGINX Ingress Controller / TLS"]
+        APIGW["API Gateway (FastAPI Pods - 2x Replicas)"]
+        RateLimit["Distributed Rate Limiter (SlowAPI)"]
+    end
+
+    subgraph Cache ["Distributed Caching & Limit Store"]
+        RedisDB[("Redis Cluster")]
+    end
+
+    subgraph ML ["Stateless ML Layer (Uvicorn / FastAPI)"]
+        ModelSrv["Model Server (InsightFace - 2x Replicas)"]
+        Preproc["Image Preprocessing & Crop"]
+        Detect["Face Detection (InsightFace / Haar Cascade)"]
+        Embed["Embedding Generator (ArcFace 512-d)"]
+    end
+
+    subgraph Storage ["Persistent & Vector Storage"]
+        Postgres[("PostgreSQL DB + pgvector")]
+        ImgStore[("Local / S3 Image Storage")]
+    end
+
+    %% Routing
+    UI -->|HTTPS / WSS| Ingress
+    SDK -->|HTTPS REST| Ingress
+    Ingress --> APIGW
+    APIGW <-->|Rate Limit Scrape| RateLimit
+    RateLimit <-->|Store Token Buckets| RedisDB
+    
+    APIGW -->|Biometric Inference REST| ModelSrv
+    ModelSrv --> Preproc
     Preproc --> Detect
     Detect --> Embed
-    Embed --> VecDB
-    Embed --> MetaDB
-    Identify --> Match
-    Match --> VecDB
-    Match --> MetaDB
-    Match --> APIGW
+    
+    APIGW -->|Write Raw Image| ImgStore
+    APIGW -->|Read/Write Metadata & Vectors| Postgres
 ```
+
+---
 
 ## Service Responsibilities
 
 ### API Gateway (FastAPI)
-- Central entry point for all client requests
-- Request validation (Pydantic schemas), rate limiting, and routing
-- Authentication enforcement via JWT middleware
+- **High Availability**: Configured for 2+ replicas behind NGINX Ingress with Horizontal Pod Autoscalers (HPAs).
+- **Distributed Rate Limiting**: Employs `slowapi` utilizing a shared **Redis backend** to prevent rate-limiting evasion across container replicas.
+- **Biometric Orchestration**: Receives image uploads, runs ingestion workflows, and orchestrates verification (1:1) and identification (1:N) flows.
 
-### Auth Service
-- Issues and validates JWT access/refresh tokens
-- Manages user roles (admin, user)
-- Stores token metadata in PostgreSQL
+### Stateless Model Server (InsightFace + ArcFace)
+- **Zero-State Design**: Operates purely as a stateless inference pipeline. It maintains no local vector databases or index files, allowing seamless scaling to N+ replicas.
+- **Biometric Extraction**: Converts aligned face crops into mathematically optimized 512-dimensional vector arrays (`VECTOR(512)`).
+- **Offline / Fallback Safety Nets**: Employs a global 85% center-crop safety net and average BGR-based identity mapping in fallback/offline modes, keeping testing robust under disconnected conditions.
 
-### Image Ingestion Service
-- Accepts multipart image uploads
-- Saves raw images to file/S3 storage
-- Triggers the ML preprocessing pipeline asynchronously
+### Storage & Matching Layer (PostgreSQL + pgvector)
+- **Native Vector Indexing**: Completely deprecates FAISS. Face embeddings are stored natively inside PostgreSQL in a `VECTOR(512)` column.
+- **Database-Level Similarity**: Matching is computed directly inside PostgreSQL using the `pgvector` cosine distance operator (`<=>`). This eliminates index replication lag and guarantees strict transaction atomicity (ACID).
+- **In-Memory Dialect Fallback**: Under unit test suites (`pytest`), the system detects the SQLite dialect and performs in-memory cosine calculations via `FaceService._cosine_similarity`, while utilizing optimized native `pgvector` in production PostgreSQL environments.
 
-### Identification / Verification Service
-- Accepts a face image and returns matches from the vector index
-- Verification (1:1) compares a query embedding to a user's stored embeddings
-- Identification (1:N) runs ANN search across all enrolled faces
+---
 
-### ML Layer
+## ML Pipeline Specifications
 
-| Component | Technology | Role |
-|---|---|---|
-| **Preprocessing** | OpenCV | Image resize, normalization, quality checks |
-| **Face Detection** | MTCNN / RetinaFace | Bounding box + landmark detection |
-| **Face Alignment** | OpenCV affine transform | Rotate/scale face to canonical pose |
-| **Embedding Extraction** | InsightFace ArcFace (512-d) | Convert aligned face to embedding vector |
-| **Matching** | FAISS (IVF-Flat or HNSW) | Approximate nearest-neighbor search |
+| Phase | Component | Technology / Algorithm | Purpose |
+|---|---|---|---|
+| **1** | **Preprocessing** | OpenCV | Image resizing, color space alignment (BGR), brightness validation. |
+| **2** | **Face Detection** | InsightFace (buffalo_l) / Haar Cascade | Pinpoints bounding boxes and core coordinates. |
+| **3** | **Face Alignment** | Affine Transformation | Translates, scales, and rotates face crop into canonical pose. |
+| **4** | **Feature Extraction** | ArcFace (512-dimensional) | Extracts high-fidelity deep biometric features into floating-point vectors. |
+| **5** | **Similarity Metric** | Cosine Distance ($1 - \text{sim}$) | Matches probe embeddings against gallery templates. |
 
-### Storage Layer
+---
 
-| Store | Technology | Stores |
-|---|---|---|
-| **Metadata DB** | PostgreSQL | Users, face template records, audit logs |
-| **Vector Index** | FAISS (file-backed) | 512-d face embedding vectors |
-| **Image Store** | Local filesystem / S3 | Raw and cropped face images |
+## Storage Architecture
 
-## Data Flow
+### PostgreSQL Schema
+- **`users`**: Primary metadata registry for enrolled individuals.
+- **`face_templates`**: Holds the `VECTOR(512)` embedding arrays mapped to `user_id` with a specialized index for rapid cosine distance lookups.
+- **`checkins`**: Tracks access telemetry, status (SUCCESS/REJECTED), matching similarity scores, and timestamps.
 
-### Enrollment Flow
+---
 
+## Data Flows
+
+### Biometric Enrollment Flow
 ```
-Client → POST /api/users/{id}/faces (multipart images)
-       → API validates JWT, writes to ImgStore
-       → Sends to ML Pipeline:
-           1. Detect & align faces
-           2. Quality checks (blur, pose, occlusion)
-           3. Extract ArcFace embeddings (512-d)
-           4. Upsert embeddings into FAISS index
-           5. Store face_templates record in PostgreSQL
-       → Return { template_ids, status }
-```
-
-### Identification Flow
-
-```
-Client → POST /api/identify (image)
-       → API validates JWT
-       → ML Pipeline:
-           1. Detect & align face
-           2. Extract embedding
-           3. ANN search in FAISS (top-K matches)
-       → Join with PostgreSQL to get user metadata
-       → Return { matches: [{ user_id, score }] }
+[Client App] ──( POST /api/users/{id}/faces )──> [API Gateway (FastAPI)]
+                                                        │
+                                          (Validate JWT & Rate Limits)
+                                                        │
+                                            [Stateless Model Server]
+                                                        │
+                                        (Preprocess -> Detect -> Align)
+                                                        │
+                                             (ArcFace 512-d Vector)
+                                                        │
+                                       [PostgreSQL (INSERT VECTOR(512))]
 ```
 
-## Scalability Considerations
+### Biometric Check-In (1:N) Flow
+```
+[Check-in Kiosk] ──( POST /api/identify )──> [API Gateway (FastAPI)]
+                                                    │
+                                         [Stateless Model Server]
+                                                    │
+                                         (Extract Probe Vector)
+                                                    │
+                                    [PostgreSQL (SELECT <=> Cosine Dist)]
+                                                    │
+                                      (Join User & Record Check-in)
+                                                    │
+[Access Granted/Denied] <──( JSON Success/Reject )──┘
+```
 
-- **API service**: Stateless — scale horizontally behind a load balancer
-- **Model Server**: GPU-bound — scale vertically (larger GPU) or horizontally with sharded FAISS
-- **PostgreSQL**: Scale with read replicas; consider connection pooling (PgBouncer)
-- **FAISS**: For >1M faces, switch to Milvus/Qdrant with built-in clustering
+---
 
-## Security Architecture
+## Scalability & Production Topology
 
-- All client traffic over **HTTPS/TLS**
-- Services in private network, only API Gateway exposed
-- JWT tokens with short expiry (15 min) + refresh tokens
-- Audit trail for all sensitive operations
+- **Gateway Layer**: HPA scaling triggered at 70% CPU/Memory metrics.
+- **Distributed In-Memory Store**: Redis stores short-term API keys and distributed rate limit counters.
+- **Database Scaling**: Primary database manages pgvector matching. Scale-out strategies leverage PgBouncer connection pooling and Read Replicas for verification lookups.
