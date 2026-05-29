@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
+from collections.abc import Iterable
 from typing import Any
 
 import httpx
@@ -14,8 +16,6 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.config import get_settings
-from api.metrics import identify_duration_seconds, model_server_errors_total
 from api.models.db_models import FaceTemplate, User
 from api.models.schemas import (
     EnrollResponse,
@@ -29,9 +29,8 @@ from ingestion.pipeline.preprocessor import assess_quality
 
 logger = logging.getLogger(__name__)
 
-_settings = get_settings()
-MODEL_SERVER_URL: str = _settings.model_server_url
-SIMILARITY_THRESHOLD: float = _settings.similarity_threshold
+MODEL_SERVER_URL: str = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
+SIMILARITY_THRESHOLD: float = float(os.environ.get("SIMILARITY_THRESHOLD", "0.6"))
 
 
 class FaceService:
@@ -66,20 +65,38 @@ class FaceService:
 
     async def _get_embeddings(self, image_data: list[bytes]) -> list[dict[str, Any]]:
         """Send images to model server, receive embeddings + quality scores."""
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                files = [
-                    ("images", (f"face_{i}.jpg", data, "image/jpeg"))
-                    for i, data in enumerate(image_data)
-                ]
-                resp = await client.post(f"{MODEL_SERVER_URL}/embed", files=files)
-                resp.raise_for_status()
-                return resp.json()["results"]
-        except Exception:
-            model_server_errors_total.inc()
-            raise
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            files = [
+                ("images", (f"face_{i}.jpg", data, "image/jpeg"))
+                for i, data in enumerate(image_data)
+            ]
+            resp = await client.post(f"{MODEL_SERVER_URL}/embed", files=files)
+            resp.raise_for_status()
+            return resp.json()["results"]  # [{embedding: [...], quality: 0.9}, ...]
 
-    # _index_embeddings and _search were removed in favor of pgvector
+    async def _index_embeddings(
+        self, items: Iterable[tuple[uuid.UUID, list[float]]]
+    ) -> None:
+        """Add the provided embeddings to the model server FAISS index."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for face_id, embedding in items:
+                resp = await client.post(
+                    f"{MODEL_SERVER_URL}/index",
+                    json={"face_id": str(face_id), "embedding": embedding},
+                )
+                resp.raise_for_status()
+
+    async def _search(
+        self, embedding: list[float], top_k: int = 5
+    ) -> list[dict[str, Any]]:
+        """Query model server FAISS index for nearest neighbours."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                f"{MODEL_SERVER_URL}/search",
+                json={"embedding": embedding, "top_k": top_k},
+            )
+            resp.raise_for_status()
+            return resp.json()["results"]  # [{face_id, score}, ...]
 
     @staticmethod
     def _is_non_zero_embedding(embedding: list[float] | None) -> bool:
@@ -128,12 +145,12 @@ class FaceService:
                     report,
                 )
 
-        if len(valid_images) < 3:
+        if len(valid_images) < 4:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Only {len(valid_images)} images passed quality checks. "
-                    "Minimum 3 required."
+                    "Minimum 4 required."
                 ),
             )
 
@@ -143,43 +160,34 @@ class FaceService:
             item for item in embeddings_resp if self._is_valid_embedding_result(item)
         ]
 
-        if len(valid_results) < 3:
+        if len(valid_results) < 4:
             raise HTTPException(
                 status_code=400,
                 detail=(
                     f"Only {len(valid_results)} images produced valid embeddings. "
-                    "Minimum 3 required."
+                    "Minimum 4 required."
                 ),
             )
 
         template_ids: list[uuid.UUID] = []
-        quality_scores: list[float] = [
-            float(item.get("quality", 0.0)) for item in valid_results
-        ]
+        quality_scores: list[float] = []
+        items_to_index: list[tuple[uuid.UUID, list[float]]] = []
 
-        embeddings = np.array(
-            [item["embedding"] for item in valid_results], dtype=np.float32
-        )
-        averaged = embeddings.mean(axis=0)
-        norm = float(np.linalg.norm(averaged))
-        if norm <= 1e-6:
-            raise HTTPException(
-                status_code=400,
-                detail="Averaged enrollment embedding was invalid.",
+        for item in valid_results:
+            tid = uuid.uuid4()
+            template = FaceTemplate(
+                id=tid,
+                user_id=user_id,
+                embedding=item["embedding"],
+                quality_score=item.get("quality"),
             )
-        averaged = averaged / norm
-
-        tid = uuid.uuid4()
-        template = FaceTemplate(
-            id=tid,
-            user_id=user_id,
-            embedding=averaged.tolist(),
-            quality_score=float(np.mean(quality_scores)) if quality_scores else None,
-        )
-        db.add(template)
-        template_ids.append(tid)
+            db.add(template)
+            template_ids.append(tid)
+            quality_scores.append(item.get("quality", 0.0))
+            items_to_index.append((tid, item["embedding"]))
 
         await db.flush()
+        await self._index_embeddings(items_to_index)
         await audit_svc.log_action(
             user_id=user_id,
             action="FACE_ENROLL",
@@ -222,31 +230,28 @@ class FaceService:
             return IdentifyResponse(matches=[], latency_ms=round(latency, 1))
 
         embedding = first["embedding"]
-
-        # Search using pgvector cosine_distance (<=>)
-        # Cosine distance = 1 - Cosine similarity
-        max_distance = 1.0 - SIMILARITY_THRESHOLD
-
-        stmt = (
-            select(FaceTemplate, User, FaceTemplate.embedding.cosine_distance(embedding).label("distance"))
-            .join(User, FaceTemplate.user_id == User.id)
-            .where(FaceTemplate.embedding.cosine_distance(embedding) <= max_distance)
-            .order_by("distance")
-            .limit(5)
-        )
-
-        rows = (await db.execute(stmt)).all()
+        search_results = await self._search(embedding)
 
         matches: list[MatchResult] = []
-        for tpl, user, distance in rows:
-            score = 1.0 - float(distance)
-            matches.append(
-                MatchResult(
-                    user_id=user.id,
-                    name=user.name,
-                    score=round(score, 4),
-                )
+        for hit in search_results:
+            if hit["score"] < SIMILARITY_THRESHOLD:
+                continue
+            # Resolve user from face template
+            stmt = (
+                select(FaceTemplate, User)
+                .join(User, FaceTemplate.user_id == User.id)
+                .where(FaceTemplate.id == uuid.UUID(hit["face_id"]))
             )
+            row = (await db.execute(stmt)).first()
+            if row:
+                tpl, user = row
+                matches.append(
+                    MatchResult(
+                        user_id=user.id,
+                        name=user.name,
+                        score=round(hit["score"], 4),
+                    )
+                )
 
         audit_svc = AuditService(db)
         await audit_svc.log_action(
@@ -262,7 +267,6 @@ class FaceService:
         )
 
         latency = (time.perf_counter() - t0) * 1000
-        identify_duration_seconds.observe(time.perf_counter() - t0)
         return IdentifyResponse(matches=matches, latency_ms=round(latency, 1))
 
     # ------------------------------------------------------------------

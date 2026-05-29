@@ -94,18 +94,3 @@ class TestFaceServiceValidation:
         face_svc = FaceService()
         assert face_svc._is_non_zero_embedding([1.0] + [0.0] * 511)
         assert not face_svc._is_non_zero_embedding([0.0] * 512)
-
-
-class TestLiveness:
-    """Liveness fallback behavior."""
-
-    def test_heuristic_liveness_returns_fields(self):
-        from model_server.liveness import LivenessDetector
-
-        detector = LivenessDetector()
-        img = np.random.randint(70, 190, (112, 112, 3), dtype=np.uint8)
-        result = detector.analyze(img)
-
-        assert result["liveness_mode"] in {"heuristic", "onnx"}
-        assert 0.0 <= result["liveness_score"] <= 1.0
-        assert isinstance(result["liveness_passed"], bool)

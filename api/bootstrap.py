@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
 from api.auth.jwt_handler import hash_password
-from api.config import get_settings
 from api.models.schemas import UserCreate
 from api.services.database import async_session_factory
 from api.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bootstrap_enabled() -> bool:
+    return _truthy(os.environ.get("BOOTSTRAP_ON_STARTUP"))
 
 
 def _load_seed_users(path_str: str | None) -> list[dict[str, Any]]:
@@ -75,26 +83,26 @@ async def _seed_user(user_data: dict[str, Any]) -> None:
 
 async def bootstrap_demo_data() -> None:
     """Create the demo admin account and optional seed users on startup."""
-    settings = get_settings()
-    if not settings.bootstrap_on_startup:
-        return
-    if settings.is_production:
-        logger.warning("Bootstrap skipped: not allowed in production")
+    if not _bootstrap_enabled():
         return
 
     users_to_seed: list[dict[str, Any]] = []
-    if settings.bootstrap_admin_email and settings.bootstrap_admin_password:
+    admin_email = os.environ.get("BOOTSTRAP_ADMIN_EMAIL")
+    admin_password = os.environ.get("BOOTSTRAP_ADMIN_PASSWORD")
+    admin_name = os.environ.get("BOOTSTRAP_ADMIN_NAME", "Demo Admin")
+
+    if admin_email and admin_password:
         users_to_seed.append(
             {
-                "name": settings.bootstrap_admin_name,
-                "email": settings.bootstrap_admin_email,
-                "password": settings.bootstrap_admin_password,
+                "name": admin_name,
+                "email": admin_email,
+                "password": admin_password,
                 "role": "admin",
                 "metadata": {"seeded_admin": True},
             }
         )
 
-    users_to_seed.extend(_load_seed_users(settings.bootstrap_users_file))
+    users_to_seed.extend(_load_seed_users(os.environ.get("BOOTSTRAP_USERS_FILE")))
     if not users_to_seed:
         logger.info("Bootstrap was enabled but no users were configured")
         return

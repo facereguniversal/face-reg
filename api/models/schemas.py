@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 
 # ---------------------------------------------------------------------------
 # Auth
@@ -40,48 +40,14 @@ class UserCreate(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-CheckInStatus = Literal[
-    "SUCCESS",
-    "FAILED",
-    "SPOOF_DETECTED",
-    "MANUAL_OVERRIDE",
-    "ALREADY_CHECKED_IN",
-]
-
-
-class CheckInResponseItem(BaseModel):
-    id: uuid.UUID
-    user_id: uuid.UUID | None
-    checkin_time: datetime
-    status: str
-    device_or_location_id: str
-    confidence_score: float | None = None
-
-    model_config = {"from_attributes": True}
-
-
 class UserResponse(BaseModel):
     user_id: uuid.UUID
     name: str
     email: EmailStr
-    role: str = "user"
     created_at: datetime
     face_count: int = 0
-    last_checkin: CheckInResponseItem | None = None
 
     model_config = {"from_attributes": True}
-
-
-class UserSearchItem(BaseModel):
-    user_id: uuid.UUID
-    name: str
-    email: EmailStr
-    role: str
-    last_checkin: CheckInResponseItem | None = None
-
-
-class UserSearchResponse(BaseModel):
-    users: list[UserSearchItem]
 
 
 # ---------------------------------------------------------------------------
@@ -140,53 +106,6 @@ class ValidateResponse(BaseModel):
     passed: bool
     quality_score: float | None
     issues: list[str]
-
-
-# ---------------------------------------------------------------------------
-# Check-ins
-# ---------------------------------------------------------------------------
-
-
-class CheckInUser(BaseModel):
-    user_id: uuid.UUID
-    name: str
-    email: EmailStr
-    role: str
-
-
-class CheckInResponse(BaseModel):
-    status: CheckInStatus
-    message: str
-    user: CheckInUser | None = None
-    checkin: CheckInResponseItem | None = None
-    confidence_score: float | None = None
-    threshold: float | None = None
-    cooldown_seconds: int | None = None
-    issues: list[str] = Field(default_factory=list)
-
-
-class CheckInLiveItem(CheckInResponseItem):
-    user_name: str | None = None
-    user_email: EmailStr | None = None
-    user_role: str | None = None
-
-
-class CheckInLiveResponse(BaseModel):
-    checkins: list[CheckInLiveItem]
-
-
-class ManualCheckInRequest(BaseModel):
-    user_id: uuid.UUID
-    device_or_location_id: str = Field(..., min_length=1, max_length=255)
-    reason: str | None = Field(default=None, max_length=500)
-
-    @field_validator("device_or_location_id")
-    @classmethod
-    def normalize_device(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("device_or_location_id cannot be empty")
-        return value
 
 
 # ---------------------------------------------------------------------------

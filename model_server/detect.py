@@ -58,7 +58,7 @@ class FaceDetector:
             from insightface.app import FaceAnalysis
 
             self._detector = FaceAnalysis(
-                name="buffalo_sc",
+                name="buffalo_l",
                 providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
             )
             self._detector.prepare(ctx_id=0, det_size=(640, 640))
@@ -123,44 +123,6 @@ class FaceDetector:
                         "det_score": float(face.det_score),
                     }
                 )
-
-            # Secondary Haar cascade fallback for synthetic faces in local demos
-            if not results:
-                logger.info("InsightFace found 0 faces; attempting Haar cascade fallback")
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                cascade = cv2.CascadeClassifier(
-                    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-                )
-                rects = cascade.detectMultiScale(gray, 1.1, 4)
-                for x, y, w, h in rects:
-                    crop = img[y : y + h, x : x + w]
-                    aligned = cv2.resize(crop, (112, 112))
-                    results.append(
-                        {
-                            "aligned": aligned,
-                            "bbox": [int(x), int(y), int(x + w), int(y + h)],
-                            "landmarks": None,
-                            "det_score": 1.0,
-                        }
-                    )
-
-        # Third fallback: if still no faces detected (common with synthetic/drawn canvas in local demos),
-        # use a center-crop fallback so that the demo or test suite runs completely reliably.
-        if not results:
-            logger.info("No faces found; falling back to 85% center-crop for demo/testing")
-            h, w = img.shape[:2]
-            crop_w, crop_h = int(w * 0.85), int(h * 0.85)
-            x, y = (w - crop_w) // 2, (h - crop_h) // 2
-            crop = img[y : y + crop_h, x : x + crop_w]
-            aligned = cv2.resize(crop, (112, 112))
-            results.append(
-                {
-                    "aligned": aligned,
-                    "bbox": [int(x), int(y), int(x + crop_w), int(y + crop_h)],
-                    "landmarks": None,
-                    "det_score": 1.0,
-                }
-            )
 
         logger.info("Detected %d face(s)", len(results))
         return results

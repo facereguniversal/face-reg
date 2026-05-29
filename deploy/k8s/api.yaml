@@ -4,7 +4,7 @@ metadata:
   name: api
   namespace: face-reg
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: api
@@ -13,38 +13,12 @@ spec:
       labels:
         app: api
     spec:
-      topologySpreadConstraints:
-        - maxSkew: 1
-          topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
-          labelSelector:
-            matchLabels:
-              app: api
       containers:
         - name: api
           image: face-reg-api:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
-          livenessProbe:
-            httpGet:
-              path: /api/health
-              port: 8000
-            initialDelaySeconds: 15
-            periodSeconds: 20
-          readinessProbe:
-            httpGet:
-              path: /api/health
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          resources:
-            requests:
-              cpu: "100m"
-              memory: "256Mi"
-            limits:
-              cpu: "500m"
-              memory: "512Mi"
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -61,10 +35,6 @@ spec:
                 secretKeyRef:
                   name: face-secrets
                   key: SECRET_KEY
-            - name: REDIS_URL
-              value: "redis://redis.face-reg.svc.cluster.local:6379/0"
-            - name: CHECKIN_DEVICE_TOKENS
-              value: "demo-kiosk:demo-token"
 ---
 apiVersion: v1
 kind: Service
