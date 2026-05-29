@@ -4,7 +4,7 @@ metadata:
   name: api
   namespace: face-reg
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: api
@@ -13,6 +13,13 @@ spec:
       labels:
         app: api
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: api
       containers:
         - name: api
           image: face-reg-api:latest
@@ -54,6 +61,10 @@ spec:
                 secretKeyRef:
                   name: face-secrets
                   key: SECRET_KEY
+            - name: REDIS_URL
+              value: "redis://redis.face-reg.svc.cluster.local:6379/0"
+            - name: CHECKIN_DEVICE_TOKENS
+              value: "demo-kiosk:demo-token"
 ---
 apiVersion: v1
 kind: Service

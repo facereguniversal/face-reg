@@ -8,7 +8,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- (Optional) Enable pgvector for native vector similarity search
--- CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- --------------------------------------------------------------------------
 -- Users
@@ -46,8 +46,7 @@ CREATE INDEX idx_images_user ON images (user_id);
 CREATE TABLE IF NOT EXISTS face_templates (
     id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id         UUID            NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    embedding       JSONB,
-    -- If using pgvector: embedding VECTOR(512),
+    embedding       VECTOR(512),
     model           VARCHAR(100)    NOT NULL DEFAULT 'arcface_r100',
     quality_score   FLOAT,
     source_image_id UUID            REFERENCES images(id),
@@ -55,8 +54,7 @@ CREATE TABLE IF NOT EXISTS face_templates (
 );
 
 CREATE INDEX idx_face_templates_user ON face_templates (user_id);
--- If using pgvector:
--- CREATE INDEX idx_face_templates_embedding ON face_templates USING ivfflat (embedding vector_cosine_ops);
+CREATE INDEX idx_face_templates_embedding ON face_templates USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
 
 -- --------------------------------------------------------------------------
 -- Check-ins

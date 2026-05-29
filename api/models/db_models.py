@@ -18,6 +18,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 
 def utcnow() -> datetime:
@@ -67,8 +68,8 @@ class FaceTemplate(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    # Embedding stored as JSON array (float list). For pgvector, use VECTOR type.
-    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Embedding stored as pgvector type.
+    embedding: Mapped[list | None] = mapped_column(Vector(512), nullable=True)
     model: Mapped[str] = mapped_column(String(100), default="arcface_r100")
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     source_image_id: Mapped[uuid.UUID | None] = mapped_column(

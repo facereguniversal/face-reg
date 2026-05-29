@@ -12,6 +12,7 @@ SQLAlchemy>=2.0.0
 asyncpg>=0.29.0
 aiosqlite>=0.20.0
 alembic>=1.13.0
+pgvector>=0.2.5
 psycopg2-binary>=2.9.9
 greenlet>=3.0.0
 
@@ -32,6 +33,7 @@ numpy>=1.26.0
 
 # Security / ops
 slowapi>=0.1.9
+redis>=5.0.0
 prometheus-fastapi-instrumentator>=7.0.0
 prometheus-client>=0.20.0
 

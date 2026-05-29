@@ -16,8 +16,6 @@ services:
           memory: 1G
 
   api:
-    env_file:
-      - .env.production
     environment:
       ENVIRONMENT: production
       BOOTSTRAP_ON_STARTUP: "false"
@@ -39,13 +37,9 @@ services:
       DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
       DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-30}
-    ports: !reset []
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "python -c \"import urllib.error, urllib.request;\\ntry:\\n r=urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4)\\nexcept urllib.error.HTTPError as e:\\n r=e\\nexit(0 if r.status==200 else 1)\"",
-        ]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status==200 else 1)\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -102,9 +96,22 @@ services:
       api:
         condition: service_healthy
 
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
   prometheus:
     image: prom/prometheus:v2.54.1
     restart: unless-stopped
+    ports:
+      - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
@@ -133,3 +140,4 @@ services:
 volumes:
   caddy_data:
   caddy_config:
+  redis_data:

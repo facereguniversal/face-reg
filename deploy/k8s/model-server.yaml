@@ -4,7 +4,7 @@ metadata:
   name: model-server
   namespace: face-reg
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: model-server
@@ -13,6 +13,13 @@ spec:
       labels:
         app: model-server
     spec:
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: model-server
       containers:
         - name: model-server
           image: face-reg-model:latest
@@ -38,18 +45,7 @@ spec:
             limits:
               cpu: "2"
               memory: "4Gi"
-          env:
-            - name: FAISS_INDEX_PATH
-              value: "/data/faiss.index"
-            - name: FAISS_MAP_PATH
-              value: "/data/faiss_id_map.json"
-          volumeMounts:
-            - name: model-data
-              mountPath: /data
-      volumes:
-        - name: model-data
-          persistentVolumeClaim:
-            claimName: model-pvc
+          # Removed FAISS env and volumes
 ---
 apiVersion: v1
 kind: Service
