@@ -6,7 +6,6 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Index,
     JSON,
     BigInteger,
     DateTime,
@@ -18,7 +17,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
 
 
 def utcnow() -> datetime:
@@ -54,7 +52,6 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     audit_logs: Mapped[list[AuditLog]] = relationship(back_populates="user")
-    checkins: Mapped[list[CheckIn]] = relationship(back_populates="user")
 
 
 class FaceTemplate(Base):
@@ -68,8 +65,8 @@ class FaceTemplate(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
-    # Embedding stored as pgvector type.
-    embedding: Mapped[list | None] = mapped_column(Vector(512), nullable=True)
+    # Embedding stored as JSON array (float list). For pgvector, use VECTOR type.
+    embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
     model: Mapped[str] = mapped_column(String(100), default="arcface_r100")
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     source_image_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -101,33 +98,6 @@ class Image(Base):
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="images")
-
-
-class CheckIn(Base):
-    """Stateful kiosk check-in event."""
-
-    __tablename__ = "checkins"
-    __table_args__ = (
-        Index("idx_checkins_time", "checkin_time"),
-        Index("idx_checkins_user_time", "user_id", "checkin_time"),
-        Index("idx_checkins_status_time", "status", "checkin_time"),
-        Index("idx_checkins_device_time", "device_or_location_id", "checkin_time"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
-    )
-    checkin_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow
-    )
-    status: Mapped[str] = mapped_column(String(50), nullable=False)
-    device_or_location_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    confidence_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-
-    user: Mapped[User | None] = relationship(back_populates="checkins")
 
 
 class AuditLog(Base):

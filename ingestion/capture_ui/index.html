@@ -3,58 +3,39 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Enrollment Wizard</title>
+  <title>Face Capture – Enrollment</title>
   <link rel="stylesheet" href="style.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
 <body>
-  <main class="wizard-shell">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Lumiere Hotels</p>
-        <h1>Guest Enrollment</h1>
-      </div>
-      <ol class="steps" aria-label="Enrollment progress">
-        <li class="active" data-step-dot="profile">Profile</li>
-        <li data-step-dot="capture">Capture</li>
-        <li data-step-dot="submit">Enroll</li>
-      </ol>
+  <div class="container">
+    <header>
+      <h1>Face Recognition</h1>
+      <p>Secure Biometric Enrollment</p>
     </header>
-
-    <section class="profile-pane" id="profile-pane">
-      <form id="profile-form">
-        <label>
-          Name
-          <input id="name-input" name="name" autocomplete="name" required maxlength="255" />
-        </label>
-        <label>
-          Email
-          <input id="email-input" name="email" type="email" autocomplete="email" required maxlength="255" />
-        </label>
-        <button type="submit">Create Profile</button>
-      </form>
-    </section>
-
-    <section class="capture-pane" id="capture-pane" hidden>
-      <div class="camera-column">
-        <div class="video-frame">
-          <video id="webcam" autoplay playsinline muted></video>
-          <div id="face-guide"></div>
-        </div>
-        <div id="feedback-panel">
-          <span id="feedback-text">Camera starting</span>
-        </div>
-        <button id="capture-btn" disabled>Capture Straight</button>
+    
+    <main class="capture-container">
+      <div id="video-wrapper">
+        <video id="webcam" autoplay playsinline></video>
+        <div id="face-guide"></div>
+      </div>
+      
+      <div id="feedback-panel" class="hidden">
+        <span id="feedback-icon"></span>
+        <span id="feedback-text">Position your face inside the frame</span>
       </div>
 
-      <aside class="pose-column">
-        <h2 id="created-user-name"></h2>
-        <ul id="pose-list"></ul>
-        <div id="gallery"></div>
-        <button id="submit-btn" disabled>Complete Enrollment</button>
-      </aside>
-    </section>
-  </main>
+      <div class="controls">
+        <button id="capture-btn" disabled>Capture Frame</button>
+      </div>
+    </main>
+
+    <aside class="gallery-container">
+      <h2>Captured Frames (<span id="frame-count">0</span>/6)</h2>
+      <div id="gallery"></div>
+      <button id="submit-btn" disabled>Complete Enrollment</button>
+    </aside>
+  </div>
 
   <script src="app.js"></script>
 </body>

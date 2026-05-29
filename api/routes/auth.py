@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-
-from api.rate_limit import limiter
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.jwt_handler import (
@@ -21,12 +19,7 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("10/minute")
-async def login(
-    request: Request,
-    body: LoginRequest,
-    db: AsyncSession = Depends(get_db),
-):
+async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate and return JWT access + refresh tokens."""
     user_svc = UserService(db)
     user = await user_svc.get_by_email(body.email)

@@ -1,111 +1,154 @@
 # Face Recognition Web Service
 
-A production-grade, highly available face recognition and enrollment stack built with **FastAPI**, **InsightFace/ArcFace**, **PostgreSQL (pgvector)**, and **Redis**.
+A demo-ready face recognition stack built with FastAPI, InsightFace/ArcFace, FAISS, and PostgreSQL.
 
-> [!NOTE]
-> This service has been fully upgraded for mass production scaling (10,000+ daily users). The architecture is completely stateless: ML inference is separated from indexing, database similarity search is handled natively via `pgvector`, rate-limiting is synchronized across replicas via Redis, and deployments are orchestrated via Highly Available Kubernetes.
+> Status: Docker Compose is the supported deployment path for the current demo. The Kubernetes manifests are still draft assets and are not treated as a supported deployment target yet.
 
----
+## What Works
 
-## Features
-
-- **1:N Face Identification**: Match a probe face against all enrolled templates in under 50ms using optimized PostgreSQL `pgvector` indexing.
-- **1:1 Face Verification**: Verify a probe face against a specific user's template to validate identity.
-- **Biometric Enrollment**: Upload 3 to 5 images per user to generate and store a high-quality averaged 512-d ArcFace embedding.
-- **Distributed Rate Limiting**: Redis-backed rate-limiting ensures consistent, synchronized traffic controls across multiple API gateways and service replicas.
-- **Stateless ML Pipeline**: The Model Server acts purely as a stateless embedding generator, allowing seamless horizontal scaling under high concurrent workloads.
-- **Live Admin Dashboard & Web Demos**: Real-time websocket-powered hotel kiosk check-in tracking, user capture, and admin interfaces.
-- **Production-Grade Monitoring**: Fully integrated Prometheus scraping endpoints and Grafana dashboards tracking system resource utilization and API throughput.
-- **Enterprise-Ready Infrastructure**: Kubernetes configurations with Horizontal Pod Autoscalers (HPAs), Pod Anti-Affinity rules, NGINX Ingress Controller, and cert-manager automated TLS.
-- **GitHub Actions CI/CD**: Automated linting, unit testing (`pytest`), Docker builds, and zero-downtime rolling updates to your Kubernetes cluster.
-
----
-
-## System Architecture
-
-```mermaid
-graph TD
-    Client["Clients / Kiosks"]
-    
-    subgraph K8S["Kubernetes Cluster (High Availability)"]
-        Ingress["NGINX Ingress Controller (cert-manager TLS)"]
-        
-        subgraph API_GATEWAY["API Layer (FastAPI Replicas)"]
-            API_1["api-pod-1"]
-            API_2["api-pod-2"]
-        end
-        
-        subgraph INFERENCE["ML Layer (Stateless ArcFace Replicas)"]
-            ML_1["model-server-pod-1"]
-            ML_2["model-server-pod-2"]
-        end
-        
-        subgraph CACHE["Cache Layer"]
-            Redis["Redis (Distributed Rate-Limit Storage)"]
-        end
-        
-        subgraph DB["Storage Layer"]
-            Postgres["PostgreSQL + pgvector (MetaDB & Vector Search)"]
-            Storage["Shared Persistent Volume (Face Images)"]
-        end
-    end
-    
-    Client -->|HTTPS (TLS)| Ingress
-    Ingress --> API_1 & API_2
-    API_1 & API_2 -->|Distributed Limiting| Redis
-    API_1 & API_2 -->|Stateless Embeddings| ML_1 & ML_2
-    API_1 & API_2 -->|JSON Metadata & pgvector ANN Search| Postgres
-    API_1 & API_2 -->|Image Writes| Storage
-```
-
----
+- `POST /api/users/{id}/faces` enrolls 4 to 6 images per user.
+- `POST /api/identify` performs 1:N search against enrolled templates.
+- `POST /api/verify` performs 1:1 verification against a target user.
+- `POST /api/faces/validate` checks image quality and rejects non-embeddable inputs.
+- `/demo/capture/` and `/demo/checkin/` serve the browser demos from the API host.
+- Docker Compose seeds a demo admin account on startup so login works without manual DB edits.
 
 ## Project Layout
 
 ```text
 face-reg/
-├── .github/workflows/       # GitHub Actions CI/CD Pipeline
-├── api/                     # FastAPI App (JWT Auth, slowapi rate-limiting, services, db, seeds)
-├── db/                      # Alembic migrations & Database Schema SQL (pgvector integration)
-├── deploy/                  # Dockerfiles, docker-compose configs, and High-Availability Kubernetes manifests
-│   ├── docker-compose.yml       # Local Dev Compose Stack
-│   ├── docker-compose.prod.yml  # Local Production-Simulated Stack
-│   └── k8s/                     # HA K8s manifests (Deployments, Services, HPAs, Redis, NGINX Ingress, TLS)
-├── docs/                    # Architectural guidelines, API specs, and deploy runbooks
-├── ingestion/               # Kiosk browser demos (Capture, Check-In, Admin Dashboard)
-├── model_server/            # Stateless ArcFace/InsightFace embedding generation service
-└── tests/                   # Pytest automation suite
+├── .github/workflows/       # CI
+├── api/                     # FastAPI app, auth, services, bootstrap
+├── db/                      # Schema and migration notes
+├── deploy/                  # Dockerfiles, Compose, draft k8s manifests
+├── docs/                    # API and architecture docs
+├── ingestion/               # Browser demos and preprocessing helpers
+├── model_server/            # InsightFace + FAISS service
+├── tests/                   # Pytest suite
+└── README.md
 ```
 
----
+## Quick Start
 
-## Configuration
+Prerequisites:
 
-The system is configured via environment variables.
+- Docker Engine with Compose
+- Port `8000` available on the host
 
-| Variable | Description | Default | Environment |
-|----------|-------------|---------|-------------|
-| `PORT` | FastAPI server port | `8000` | Local / Container |
-| `DATABASE_URL` | PostgreSQL connection string | *Required* | All |
-| `REDIS_URL` | Redis distributed caching/rate-limit string | *Required in Prod* | All |
-| `MODEL_SERVER_URL` | Endpoint to stateless embedding service | `http://localhost:8001` | All |
-| `SECRET_KEY` | HS256 JWT cryptographic signing key | *Required in Prod* | All |
-| `ENVIRONMENT` | Deployment environment mode (`development`/`production`) | `development` | All |
-| `CORS_ORIGINS` | Allowed origins (no wildcards in production) | `http://localhost:3000` | All |
-| `CHECKIN_DEVICE_TOKENS` | Device identification and auth tokens | *Required in Prod* | All |
-| `ENABLE_DEMO_UI` | Serve hotel kiosk web interfaces from the API | `true` in dev, `false` in prod | All |
+Run the stack:
 
----
+```bash
+docker compose -f deploy/docker-compose.yml up --build
+```
 
-## Quick Start (Local Development)
+The Compose setup publishes only the API port. PostgreSQL and the model server stay internal to the Compose network.
 
-### 1. Prerequisites
+Available URLs:
+
+- API root: `http://localhost:8000/`
+- Swagger: `http://localhost:8000/docs`
+- Health: `http://localhost:8000/api/health`
+- Capture demo: `http://localhost:8000/demo/capture/`
+- Check-in demo: `http://localhost:8000/demo/checkin/`
+
+Seeded demo admin:
+
+- Email: `admin@example.com`
+- Password: `adminpass`
+
+Smoke-test login:
+
+```bash
+curl -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"adminpass"}'
+```
+
+Stop and clean up:
+
+```bash
+docker compose -f deploy/docker-compose.yml down
+docker compose -f deploy/docker-compose.yml down -v
+```
+
+## Demo Bootstrap
+
+Startup seeding is controlled through environment variables:
+
+```bash
+BOOTSTRAP_ON_STARTUP=true
+BOOTSTRAP_ADMIN_NAME="Demo Admin"
+BOOTSTRAP_ADMIN_EMAIL="admin@example.com"
+BOOTSTRAP_ADMIN_PASSWORD="adminpass"
+# Optional:
+# BOOTSTRAP_USERS_FILE=/app/seeds/demo-users.json
+```
+
+Optional seed file format:
+
+```json
+{
+  "users": [
+    {
+      "name": "Front Desk Demo",
+      "email": "frontdesk@example.com",
+      "password": "change-me",
+      "role": "admin",
+      "metadata": { "seeded": true }
+    },
+    {
+      "name": "Guest Demo",
+      "email": "guest@example.com",
+      "role": "user",
+      "metadata": { "group": "demo" }
+    }
+  ]
+}
+```
+
+The demo UIs read the API host from `window.location.origin`, so they work from a remote browser against a single VM without editing frontend code.
+
+## API Summary
+
+Authentication:
+
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+
+Users:
+
+- `POST /api/users`
+- `GET /api/users/{user_id}`
+- `DELETE /api/users/{user_id}`
+
+Faces:
+
+- `POST /api/users/{user_id}/faces`
+- `POST /api/faces/validate`
+- `GET /api/faces/{template_id}`
+- `DELETE /api/faces/{template_id}`
+
+Recognition:
+
+- `POST /api/identify`
+- `POST /api/identify/batch`
+- `POST /api/verify`
+
+Utility:
+
+- `GET /api/health`
+
+See [docs/api_reference.md](docs/api_reference.md) for request and response examples.
+
+## Local Development
+
+Prerequisites:
+
 - Python 3.11+
-- PostgreSQL 14+ with the `pgvector` extension installed
-- Redis Server (local or containerized)
+- PostgreSQL 14+
 
-### 2. Local Environment Setup
-Clone the repository and build the virtual environment:
+Setup:
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
@@ -113,61 +156,54 @@ pip install -r api/requirements.txt
 pip install -r model_server/requirements.txt
 ```
 
-### 3. Database Initialization
-Ensure your database has the `pgvector` extension enabled, then apply the base schema:
+Initialize the database:
+
 ```bash
 createdb facedb
-psql facedb -c "CREATE EXTENSION IF NOT EXISTS vector;"
 psql facedb < db/schema.sql
 ```
 
-### 4. Running the Services
-In separate terminal sessions, start the stateless embedding generator and the FastAPI API gateway:
-```bash
-# Start Model Inference Server (Port 8001)
-uvicorn model_server.embed:app --host 0.0.0.0 --port 8001 --reload
+Required environment variables:
 
-# Start API Gateway (Port 8000)
+```bash
 export DATABASE_URL="postgresql+asyncpg://faceuser:facepass@localhost:5432/facedb"
-export REDIS_URL="redis://localhost:6379/0"
-export SECRET_KEY="dev-secret-key-change-me"
-export CHECKIN_DEVICE_TOKENS="demo-kiosk:demo-token"
+export SECRET_KEY="your-secret-key-here"
+export MODEL_SERVER_URL="http://localhost:8001"
+```
+
+Run the services from the repo root:
+
+```bash
+uvicorn model_server.embed:app --host 0.0.0.0 --port 8001 --reload
 uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
----
+## Testing
 
-## Running with Docker Compose (Local Staging)
-
-For a complete local simulation of the production architecture using containerized PostgreSQL, Redis, and multi-replica API gateways:
+Run the full suite:
 
 ```bash
-# Start the full stack
-docker compose -f deploy/docker-compose.yml up --build
-
-# Verify all services are running and healthy
-curl http://localhost:8000/api/health
+pytest -v
 ```
 
----
+Checks used in CI:
 
-## Production Deployment (Kubernetes HA)
+```bash
+black --check api model_server tests
+flake8 api model_server tests --max-line-length 120
+docker build -f deploy/Dockerfile.api -t face-api:ci .
+docker build -f deploy/Dockerfile.model -t face-model:ci .
+```
 
-Our primary production target is Kubernetes (EKS, GKE, or custom clusters) utilizing the high-availability configuration located in `deploy/k8s/`.
+## Limitations
 
-For step-by-step production setup, custom configuration parameters, Prometheus metric targets, and disaster recovery procedures, see the comprehensive **[docs/production.md](docs/production.md)** guide.
-
----
+- The demo stack is optimized for a single host and CPU inference.
+- The Kubernetes manifests under `deploy/k8s/` are draft references, not a verified deployment path.
+- Real biometric demo data should stay outside Git and be mounted or copied in only for rehearsal/demo use.
 
 ## Documentation
 
-- **[Architecture Specifications](docs/architecture.md)** — Detailed microservices design, Mermaid flows, and scalability patterns.
-- **[API Reference](docs/api_reference.md)** — Endpoints, request schemas, authentication parameters, and response payloads.
-- **[Production Deploy Runbook](docs/production.md)** — HA Kubernetes deployment, TLS, monitoring, and backups.
-- **[Contribution Guidelines](docs/contrib_guidelines.md)** — Code style enforcement, test guidelines, and pull request procedures.
-
----
-
-## License
-
-MIT
+- [Architecture](docs/architecture.md)
+- [API Reference](docs/api_reference.md)
+- [Contributing Guidelines](docs/contrib_guidelines.md)
+- [Implementation Plan](implementation_plan.md)
