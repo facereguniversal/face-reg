@@ -36,22 +36,22 @@ class LegacyPbkdf2Sha256Hasher:
     @classmethod
     def identify(cls, hash: str | bytes) -> bool:
         if isinstance(hash, bytes):
-            hash = hash.decode('utf-8')
-        return hash.startswith('$pbkdf2-sha256$')
+            hash = hash.decode("utf-8")
+        return hash.startswith("$pbkdf2-sha256$")
 
     def hash(self, password: str | bytes, *, salt: bytes | None = None) -> str:
-        raise NotImplementedError('Not supported')
+        raise NotImplementedError("Not supported")
 
     def verify(self, password: str | bytes, hash: str | bytes) -> bool:
         if isinstance(password, str):
-            password = password.encode('utf-8')
+            password = password.encode("utf-8")
         if isinstance(hash, bytes):
-            hash = hash.decode('utf-8')
+            hash = hash.decode("utf-8")
 
         if not self.identify(hash):
             return False
 
-        parts = hash.split('$')
+        parts = hash.split("$")
         if len(parts) != 5:
             return False
 
@@ -61,16 +61,16 @@ class LegacyPbkdf2Sha256Hasher:
             salt_b64 = parts[3].translate(self.AB64_TRANS)
             padding = len(salt_b64) % 4
             if padding:
-                salt_b64 += '=' * (4 - padding)
+                salt_b64 += "=" * (4 - padding)
             salt = base64.b64decode(salt_b64)
 
             expected_key_b64 = parts[4].translate(self.AB64_TRANS)
             padding = len(expected_key_b64) % 4
             if padding:
-                expected_key_b64 += '=' * (4 - padding)
+                expected_key_b64 += "=" * (4 - padding)
             expected_key = base64.b64decode(expected_key_b64)
 
-            key = hashlib.pbkdf2_hmac('sha256', password, salt, rounds)
+            key = hashlib.pbkdf2_hmac("sha256", password, salt, rounds)
 
             return hmac.compare_digest(key, expected_key)
         except Exception:
