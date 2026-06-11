@@ -8,9 +8,13 @@ from typing import Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+import base64
+import hashlib
+import hmac
+
 from jose import JWTError, jwt
-from passlib.context import CryptContext
-from passlib.exc import UnknownHashError
+from pwdlib import PasswordHash
+from pwdlib.hashers.bcrypt import BcryptHasher
 
 # ---------------------------------------------------------------------------
 # Configuration (loaded from environment variables)
@@ -23,11 +27,60 @@ ACCESS_TOKEN_EXPIRE_MINUTES: int = int(
 )
 REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
-pwd_context = CryptContext(
-    schemes=["pbkdf2_sha256", "bcrypt"],
-    default="pbkdf2_sha256",
-    deprecated="auto",
-)
+
+class LegacyPbkdf2Sha256Hasher:
+    AB64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789./"
+    B64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    AB64_TRANS = str.maketrans(AB64_CHARS, B64_CHARS)
+
+    @classmethod
+    def identify(cls, hash: str | bytes) -> bool:
+        if isinstance(hash, bytes):
+            hash = hash.decode('utf-8')
+        return hash.startswith('$pbkdf2-sha256$')
+
+    def hash(self, password: str | bytes, *, salt: bytes | None = None) -> str:
+        raise NotImplementedError('Not supported')
+
+    def verify(self, password: str | bytes, hash: str | bytes) -> bool:
+        if isinstance(password, str):
+            password = password.encode('utf-8')
+        if isinstance(hash, bytes):
+            hash = hash.decode('utf-8')
+
+        if not self.identify(hash):
+            return False
+
+        parts = hash.split('$')
+        if len(parts) != 5:
+            return False
+
+        try:
+            rounds = int(parts[2])
+
+            salt_b64 = parts[3].translate(self.AB64_TRANS)
+            padding = len(salt_b64) % 4
+            if padding:
+                salt_b64 += '=' * (4 - padding)
+            salt = base64.b64decode(salt_b64)
+
+            expected_key_b64 = parts[4].translate(self.AB64_TRANS)
+            padding = len(expected_key_b64) % 4
+            if padding:
+                expected_key_b64 += '=' * (4 - padding)
+            expected_key = base64.b64decode(expected_key_b64)
+
+            key = hashlib.pbkdf2_hmac('sha256', password, salt, rounds)
+
+            return hmac.compare_digest(key, expected_key)
+        except Exception:
+            return False
+
+    def check_needs_rehash(self, hash: str | bytes) -> bool:
+        return True
+
+
+password_hash_context = PasswordHash((BcryptHasher(), LegacyPbkdf2Sha256Hasher()))
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
@@ -37,15 +90,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 def hash_password(plain: str) -> str:
-    return pwd_context.hash(plain)
+    return password_hash_context.hash(plain)
 
 
 def verify_password(plain: str, hashed: str) -> bool:
     if not hashed:
         return False
     try:
-        return pwd_context.verify(plain, hashed)
-    except (TypeError, ValueError, UnknownHashError):
+        return password_hash_context.verify(plain, hashed)
+    except Exception:
         return False
 
 
