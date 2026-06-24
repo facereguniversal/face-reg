@@ -9,7 +9,6 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +18,7 @@ from api.services.database import get_db
 from api.services.face_service import FaceService
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-COLUMN_CAPTURE_DIR = BASE_DIR / "ingestion" / "capture_ui"
-CHECKIN_DIR = BASE_DIR / "ingestion" / "checkin_ui"
+
 
 
 @asynccontextmanager
@@ -62,16 +60,7 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 
-app.mount(
-    "/demo/capture",
-    StaticFiles(directory=COLUMN_CAPTURE_DIR, html=True),
-    name="demo-capture",
-)
-app.mount(
-    "/demo/checkin",
-    StaticFiles(directory=CHECKIN_DIR, html=True),
-    name="demo-checkin",
-)
+
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/api/users", tags=["Users"])
@@ -90,8 +79,6 @@ async def root():
     return {
         "docs": "/docs",
         "health": "/api/health",
-        "demo_capture": "/demo/capture/",
-        "demo_checkin": "/demo/checkin/",
     }
 
 
