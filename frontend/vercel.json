@@ -5,5 +5,12 @@
       "source": "/api/:match*",
       "destination": "https://face-reg-production.up.railway.app/api/:match*"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/capture",
+      "permanent": false
+    }
   ]
 }
