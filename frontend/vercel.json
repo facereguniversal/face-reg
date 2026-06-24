@@ -3,7 +3,7 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://<YOUR_RAILWAY_BACKEND_URL>/api/:match*"
+      "destination": "https://face-reg-production.up.railway.app/api/:match*"
     }
   ]
 }
