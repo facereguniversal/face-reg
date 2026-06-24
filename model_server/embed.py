@@ -57,11 +57,12 @@ def _load_embedding_model() -> Any:
 
         model = FaceAnalysis(
             name="buffalo_l",
+            allowed_modules=["detection", "recognition"],
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
         model.prepare(ctx_id=0, det_size=(640, 640))
         embedding_model = model
-        logger.info("ArcFace embedding model loaded")
+        logger.info("ArcFace embedding model loaded (detection & recognition only)")
     except Exception as e:
         logger.warning(
             "insightface not available (%s) – embeddings will be random placeholders", e
