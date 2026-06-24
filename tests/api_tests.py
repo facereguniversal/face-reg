@@ -16,20 +16,12 @@ class TestHealthEndpoint:
         assert data["model_server"] in {"ok", "down"}
         assert data["status"] in {"ok", "degraded"}
 
-    def test_root_lists_demo_links(self, client: TestClient):
+    def test_root_lists_endpoints(self, client: TestClient):
         resp = client.get("/")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["demo_capture"] == "/demo/capture/"
-        assert data["demo_checkin"] == "/demo/checkin/"
-
-    def test_demo_static_routes_are_served(self, client: TestClient):
-        capture_resp = client.get("/demo/capture/")
-        checkin_resp = client.get("/demo/checkin/")
-        assert capture_resp.status_code == 200
-        assert checkin_resp.status_code == 200
-        assert "Face Recognition" in capture_resp.text
-        assert "Lumiere Hotels" in checkin_resp.text
+        assert data["docs"] == "/docs"
+        assert data["health"] == "/api/health"
 
 
 class TestAuthEndpoints:
