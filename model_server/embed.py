@@ -56,7 +56,7 @@ def _load_embedding_model() -> Any:
         from insightface.app import FaceAnalysis
 
         model = FaceAnalysis(
-            name="buffalo_l",
+            name="buffalo_sc",
             allowed_modules=["detection", "recognition"],
             providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
         )
