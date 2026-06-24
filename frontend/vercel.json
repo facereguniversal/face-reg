@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/:match*",
+      "destination": "https://<YOUR_RAILWAY_BACKEND_URL>/api/:match*"
+    }
+  ]
+}
