@@ -113,7 +113,7 @@ async def enroll_faces(
                 name="Demo Guest",
                 email=email,
             )
-            await db.flush()
+            await db.commit()
 
         # Read image bytes
         image_data: list[bytes] = []
