@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.jwt_handler import get_current_user, require_admin
 from api.models.schemas import UserCreate, UserResponse, EnrollResponse
-from api.services.database import get_db
+from api.services.database import get_db, async_session_factory, ensure_tables_exist
 from api.services.user_service import UserService
 from api.services.face_service import FaceService
 from api.services.dependencies import get_face_service, get_client_ip
@@ -97,59 +97,65 @@ async def delete_user(
 async def enroll_faces(
     user_id: uuid.UUID,
     request: Request,
-    db: AsyncSession = Depends(get_db),
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
     """Upload face images to enroll embeddings for a user."""
     try:
-        form = await request.form()
-        uploaded_files = form.getlist("images")
+        await ensure_tables_exist()
+        async with async_session_factory() as db:
+            form = await request.form()
+            uploaded_files = form.getlist("images")
 
-        if not uploaded_files or len(uploaded_files) < 4:
-            raise HTTPException(status_code=400, detail="At least 4 images required")
-        if len(uploaded_files) > 6:
-            raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
+            if not uploaded_files or len(uploaded_files) < 4:
+                raise HTTPException(
+                    status_code=400, detail="At least 4 images required"
+                )
+            if len(uploaded_files) > 6:
+                raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
 
-        user_svc = UserService(db)
-        user = await user_svc.get_by_id(str(user_id))
-        if not user:
-            email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
-            user = await user_svc.create_with_id(
-                user_id=user_id,
-                name="Demo Guest",
-                email=email,
+            user_svc = UserService(db)
+            user = await user_svc.get_by_id(str(user_id))
+            if not user:
+                email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
+                user = await user_svc.create_with_id(
+                    user_id=user_id,
+                    name="Demo Guest",
+                    email=email,
+                )
+                await db.commit()
+
+            # Read, downscale to max 480px, and compress images to protect RAM
+            image_data: list[bytes] = []
+            for img_file in uploaded_files:
+                if hasattr(img_file, "read"):
+                    raw_data = await img_file.read()
+                elif isinstance(img_file, bytes):
+                    raw_data = img_file
+                else:
+                    continue
+
+                np_arr = np.frombuffer(raw_data, np.uint8)
+                img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if img is not None:
+                    h, w = img.shape[:2]
+                    if max(h, w) > 480:
+                        scale = 480.0 / max(h, w)
+                        img = cv2.resize(img, (int(w * scale), int(h * scale)))
+                    _, reencoded = cv2.imencode(
+                        ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80]
+                    )
+                    image_data.append(reencoded.tobytes())
+                else:
+                    image_data.append(raw_data)
+
+            # Delegate to face service (detection → alignment → embedding → store)
+            result = await face_svc.enroll(
+                user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
             )
             await db.commit()
-
-        # Read, downscale to max 480px, and compress images to protect RAM
-        image_data: list[bytes] = []
-        for img_file in uploaded_files:
-            if hasattr(img_file, "read"):
-                raw_data = await img_file.read()
-            elif isinstance(img_file, bytes):
-                raw_data = img_file
-            else:
-                continue
-
-            np_arr = np.frombuffer(raw_data, np.uint8)
-            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-            if img is not None:
-                h, w = img.shape[:2]
-                if max(h, w) > 480:
-                    scale = 480.0 / max(h, w)
-                    img = cv2.resize(img, (int(w * scale), int(h * scale)))
-                _, reencoded = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
-                image_data.append(reencoded.tobytes())
-            else:
-                image_data.append(raw_data)
-
-        # Delegate to face service (detection → alignment → embedding → store)
-        result = await face_svc.enroll(
-            user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
-        )
-        gc.collect()
-        return result
+            gc.collect()
+            return result
     except HTTPException:
         raise
     except Exception as e:
