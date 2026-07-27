@@ -58,14 +58,16 @@ class UserService:
         existing_id = await self.get_by_id(str(user_id))
         if existing_id:
             return existing_id
-        existing_email = await self.get_by_email(email)
+
+        unique_email = f"user_{str(user_id).replace('-', '')}@example.com"
+        existing_email = await self.get_by_email(unique_email)
         if existing_email:
             return existing_email
 
         user = User(
             id=user_id,
             name=name,
-            email=email,
+            email=unique_email,
             hashed_password=hash_password(password) if password else None,
             role=role,
         )
@@ -73,7 +75,7 @@ class UserService:
         await self.audit_svc.log_action(
             user_id=user.id,
             action="USER_CREATE",
-            details={"email": email, "role": role},
+            details={"email": unique_email, "role": role},
             source_ip=self.source_ip,
         )
         await self.db.flush()
