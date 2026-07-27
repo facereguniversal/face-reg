@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotel Kiosk - Check In</title>
+    <link rel="stylesheet" href="/checkin/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="kiosk-container">
+        <div class="header">
+            <h1>Lumiere Hotels</h1>
+            <p>Seamless Check-in</p>
+        </div>
+        
+        <div class="scanner-interface">
+            <video id="webcam" autoplay playsinline></video>
+            <div class="scanner-overlay" id="scanner-overlay">
+                <div class="scan-line"></div>
+            </div>
+            
+            <div class="status-panel" id="status-panel">
+                <span id="status-text">Looking for Guest...</span>
+            </div>
+        </div>
+
+        <div class="success-card hidden" id="success-card">
+            <div class="check-icon">✓</div>
+            <h2>Welcome Back!</h2>
+            <p>Identity Verified: <span id="guest-id"></span></p>
+            <p class="subtitle">Generating your room key...</p>
+        </div>
+    </div>
+    
+    <script src="/checkin/app.js"></script>
+</body>
+</html>

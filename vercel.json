@@ -2,38 +2,16 @@
   "version": 2,
   "cleanUrls": true,
   "trailingSlash": false,
-  "builds": [
-    {
-      "src": "frontend/**",
-      "use": "@vercel/static"
-    }
-  ],
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "https://face-reg-production.up.railway.app/api/$1"
-    },
-    {
-      "source": "/capture",
-      "destination": "/frontend/capture/index.html"
-    },
-    {
-      "source": "/capture/(.*)",
-      "destination": "/frontend/capture/$1"
-    },
-    {
-      "source": "/checkin",
-      "destination": "/frontend/checkin/index.html"
-    },
-    {
-      "source": "/checkin/(.*)",
-      "destination": "/frontend/checkin/$1"
+      "source": "/api/:match*",
+      "destination": "https://face-reg-production.up.railway.app/api/:match*"
     }
   ],
   "redirects": [
     {
       "source": "/",
-      "destination": "/capture",
+      "destination": "/capture/",
       "permanent": false
     }
   ]
