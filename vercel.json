@@ -18,6 +18,10 @@
       "destination": "/frontend/capture/index.html"
     },
     {
+      "source": "/capture/",
+      "destination": "/frontend/capture/index.html"
+    },
+    {
       "source": "/capture/(.*)",
       "destination": "/frontend/capture/$1"
     },
@@ -26,15 +30,16 @@
       "destination": "/frontend/checkin/index.html"
     },
     {
+      "source": "/checkin/",
+      "destination": "/frontend/checkin/index.html"
+    },
+    {
       "source": "/checkin/(.*)",
       "destination": "/frontend/checkin/$1"
-    }
-  ],
-  "redirects": [
+    },
     {
       "source": "/",
-      "destination": "/capture",
-      "permanent": false
+      "destination": "/frontend/capture/index.html"
     }
   ]
 }

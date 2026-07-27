@@ -6,13 +6,34 @@
     {
       "source": "/api/:match*",
       "destination": "https://face-reg-production.up.railway.app/api/:match*"
-    }
-  ],
-  "redirects": [
+    },
+    {
+      "source": "/capture",
+      "destination": "/capture/index.html"
+    },
+    {
+      "source": "/capture/",
+      "destination": "/capture/index.html"
+    },
+    {
+      "source": "/capture/(.*)",
+      "destination": "/capture/$1"
+    },
+    {
+      "source": "/checkin",
+      "destination": "/checkin/index.html"
+    },
+    {
+      "source": "/checkin/",
+      "destination": "/checkin/index.html"
+    },
+    {
+      "source": "/checkin/(.*)",
+      "destination": "/checkin/$1"
+    },
     {
       "source": "/",
-      "destination": "/capture/",
-      "permanent": false
+      "destination": "/capture/index.html"
     }
   ]
 }
