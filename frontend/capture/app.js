@@ -209,7 +209,7 @@ if (submitBtn) {
                 }))
             );
 
-            const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
+            const response = await fetch(`${API_BASE}/faces/enroll_demo`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
