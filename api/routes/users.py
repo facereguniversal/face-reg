@@ -97,7 +97,7 @@ async def enroll_faces(
     request: Request,
     images: list[UploadFile] = File(default=[]),
 ):
-    """Upload face images to enroll embeddings for a user (supports multipart form-data and JSON base64)."""
+    """Upload face images to enroll embeddings for a user (ultra-low memory footprint)."""
     try:
         face_svc = getattr(request.app.state, "face_service", None)
         if face_svc is None:
@@ -105,7 +105,7 @@ async def enroll_faces(
             request.app.state.face_service = face_svc
 
         forwarded = request.headers.get("X-Forwarded-For")
-        client_ip = forwarded.split(",")[0].strip() if forwarded else ("0.0.0.0")
+        client_ip = forwarded.split(",")[0].strip() if forwarded else "0.0.0.0"
 
         await ensure_tables_exist()
         async with async_session_factory() as db:
@@ -120,10 +120,11 @@ async def enroll_faces(
                 )
                 await db.commit()
 
-            image_data: list[bytes] = []
+            # Read raw items sequentially
+            raw_byte_list: list[bytes] = []
             if images:
                 for img_file in images:
-                    image_data.append(await img_file.read())
+                    raw_byte_list.append(await img_file.read())
             else:
                 content_type = request.headers.get("content-type", "").lower()
                 if "application/json" in content_type:
@@ -133,7 +134,7 @@ async def enroll_faces(
                         if isinstance(item, str):
                             b64_str = item.split(",", 1)[1] if "," in item else item
                             try:
-                                image_data.append(base64.b64decode(b64_str))
+                                raw_byte_list.append(base64.b64decode(b64_str))
                             except Exception:
                                 continue
                 else:
@@ -141,31 +142,39 @@ async def enroll_faces(
                     uploaded_files = form.getlist("images")
                     for img_file in uploaded_files:
                         if hasattr(img_file, "read"):
-                            image_data.append(await img_file.read())
+                            raw_byte_list.append(await img_file.read())
 
-            if len(image_data) < 4:
+            if len(raw_byte_list) < 4:
                 raise HTTPException(
                     status_code=400, detail="At least 4 valid images required"
                 )
-            if len(image_data) > 6:
-                image_data = image_data[:6]
+            if len(raw_byte_list) > 6:
+                raw_byte_list = raw_byte_list[:6]
 
-            # Process and downscale to max 480px to protect RAM
+            # Sequential downscaling to 320px with immediate cleanup to keep RAM < 35MB
             processed_data: list[bytes] = []
-            for raw_data in image_data:
-                np_arr = np.frombuffer(raw_data, np.uint8)
-                img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-                if img is not None:
-                    h, w = img.shape[:2]
-                    if max(h, w) > 480:
-                        scale = 480.0 / max(h, w)
-                        img = cv2.resize(img, (int(w * scale), int(h * scale)))
-                    _, reencoded = cv2.imencode(
-                        ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80]
-                    )
-                    processed_data.append(reencoded.tobytes())
-                else:
-                    processed_data.append(raw_data)
+            for raw_bytes in raw_byte_list:
+                try:
+                    np_arr = np.frombuffer(raw_bytes, np.uint8)
+                    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                    del np_arr
+                    if img is not None:
+                        h, w = img.shape[:2]
+                        if max(h, w) > 320:
+                            scale = 320.0 / max(h, w)
+                            img = cv2.resize(img, (int(w * scale), int(h * scale)))
+                        _, reencoded = cv2.imencode(
+                            ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75]
+                        )
+                        processed_data.append(reencoded.tobytes())
+                        del img
+                    else:
+                        processed_data.append(raw_bytes)
+                except Exception:
+                    processed_data.append(raw_bytes)
+
+            del raw_byte_list
+            gc.collect()
 
             result = await face_svc.enroll(
                 user_id=user.id, image_data=processed_data, db=db, client_ip=client_ip
