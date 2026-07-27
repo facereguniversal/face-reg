@@ -93,21 +93,33 @@ class FaceDetector:
 
         if self._detector == "opencv_fallback":
             # Minimal OpenCV Haar fallback for environments without InsightFace
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            cascade = cv2.CascadeClassifier(
-                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-            )
-            rects = cascade.detectMultiScale(gray, 1.1, 4)
-            for x, y, w, h in rects:
-                crop = img[y : y + h, x : x + w]
-                aligned = cv2.resize(crop, (112, 112))
-                results.append(
-                    {
-                        "aligned": aligned,
-                        "bbox": [int(x), int(y), int(x + w), int(y + h)],
-                        "landmarks": None,
-                        "det_score": 1.0,
-                    }
+            if (
+                hasattr(cv2, "CascadeClassifier")
+                and hasattr(cv2, "data")
+                and hasattr(cv2.data, "haarcascades")
+            ):
+                try:
+                    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                    cascade = cv2.CascadeClassifier(
+                        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+                    )
+                    rects = cascade.detectMultiScale(gray, 1.1, 4)
+                    for x, y, w, h in rects:
+                        crop = img[y : y + h, x : x + w]
+                        aligned = cv2.resize(crop, (112, 112))
+                        results.append(
+                            {
+                                "aligned": aligned,
+                                "bbox": [int(x), int(y), int(x + w), int(y + h)],
+                                "landmarks": None,
+                                "det_score": 1.0,
+                            }
+                        )
+                except Exception as ex:
+                    logger.warning("OpenCV Haar cascade detection failed: %s", ex)
+            else:
+                logger.warning(
+                    "OpenCV CascadeClassifier or haarcascades data not available in cv2 module"
                 )
         else:
             # InsightFace
