@@ -206,14 +206,13 @@ if (submitBtn) {
                 }))
             );
 
-            const response = await fetch(`${API_BASE}/faces/enroll_base64`, {
+            const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     ...getHeaders()
                 },
                 body: JSON.stringify({
-                    user_id: USER_ID,
                     images: base64Images
                 })
             });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import gc
 import logging
 import uuid
@@ -100,20 +101,10 @@ async def enroll_faces(
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
-    """Upload face images to enroll embeddings for a user."""
+    """Upload face images to enroll embeddings for a user (supports multipart form-data and JSON base64)."""
     try:
         await ensure_tables_exist()
         async with async_session_factory() as db:
-            form = await request.form()
-            uploaded_files = form.getlist("images")
-
-            if not uploaded_files or len(uploaded_files) < 4:
-                raise HTTPException(
-                    status_code=400, detail="At least 4 images required"
-                )
-            if len(uploaded_files) > 6:
-                raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
-
             user_svc = UserService(db)
             user = await user_svc.get_by_id(str(user_id))
             if not user:
@@ -125,16 +116,44 @@ async def enroll_faces(
                 )
                 await db.commit()
 
-            # Read, downscale to max 480px, and compress images to protect RAM
+            content_type = request.headers.get("content-type", "").lower()
             image_data: list[bytes] = []
-            for img_file in uploaded_files:
-                if hasattr(img_file, "read"):
-                    raw_data = await img_file.read()
-                elif isinstance(img_file, bytes):
-                    raw_data = img_file
-                else:
-                    continue
 
+            if "application/json" in content_type:
+                body_json = await request.json()
+                raw_images = body_json.get("images", [])
+                if not isinstance(raw_images, list):
+                    raise HTTPException(status_code=400, detail="images must be a list")
+
+                for item in raw_images:
+                    if isinstance(item, str):
+                        b64_str = item.split(",", 1)[1] if "," in item else item
+                        try:
+                            image_data.append(base64.b64decode(b64_str))
+                        except Exception:
+                            continue
+            else:
+                form = await request.form()
+                uploaded_files = form.getlist("images")
+                for img_file in uploaded_files:
+                    if hasattr(img_file, "read"):
+                        raw_data = await img_file.read()
+                    elif isinstance(img_file, bytes):
+                        raw_data = img_file
+                    else:
+                        continue
+                    image_data.append(raw_data)
+
+            if len(image_data) < 4:
+                raise HTTPException(
+                    status_code=400, detail="At least 4 valid images required"
+                )
+            if len(image_data) > 6:
+                image_data = image_data[:6]
+
+            # Process and downscale to max 480px to protect RAM
+            processed_data: list[bytes] = []
+            for raw_data in image_data:
                 np_arr = np.frombuffer(raw_data, np.uint8)
                 img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
                 if img is not None:
@@ -145,13 +164,12 @@ async def enroll_faces(
                     _, reencoded = cv2.imencode(
                         ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80]
                     )
-                    image_data.append(reencoded.tobytes())
+                    processed_data.append(reencoded.tobytes())
                 else:
-                    image_data.append(raw_data)
+                    processed_data.append(raw_data)
 
-            # Delegate to face service (detection → alignment → embedding → store)
             result = await face_svc.enroll(
-                user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
+                user_id=user.id, image_data=processed_data, db=db, client_ip=client_ip
             )
             await db.commit()
             gc.collect()
