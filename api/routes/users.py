@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.jwt_handler import get_current_user, require_admin
-from api.models.schemas import UserCreate, UserResponse, EnrollResponse
+from api.models.schemas import UserCreate, UserResponse
 from api.services.database import get_db, async_session_factory, ensure_tables_exist
 from api.services.user_service import UserService
 from api.services.face_service import FaceService
@@ -89,7 +89,6 @@ async def delete_user(
 
 @router.post(
     "/{user_id}/faces",
-    response_model=EnrollResponse,
     status_code=status.HTTP_201_CREATED,
 )
 async def enroll_faces(
@@ -180,9 +179,20 @@ async def enroll_faces(
             )
             await db.commit()
             gc.collect()
-            return result
-    except HTTPException:
-        raise
+
+            return JSONResponse(
+                status_code=201,
+                content={
+                    "template_ids": [str(tid) for tid in result.template_ids],
+                    "status": "enrolled",
+                    "quality_scores": [
+                        float(qs) if qs is not None else 0.95
+                        for qs in result.quality_scores
+                    ],
+                },
+            )
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
     except Exception as e:
         import traceback
 
