@@ -21,10 +21,10 @@ class QualityReport:
     """Results of image quality assessment."""
 
     passed: bool
-    blur_score: float          # Laplacian variance (higher = sharper)
-    brightness: float          # Mean pixel intensity (0–255)
-    resolution_ok: bool        # Meets minimum face size
-    face_area: int             # Pixel area of detected face
+    blur_score: float  # Laplacian variance (higher = sharper)
+    brightness: float  # Mean pixel intensity (0–255)
+    resolution_ok: bool  # Meets minimum face size
+    face_area: int  # Pixel area of detected face
     issues: list[str]
 
     def __str__(self) -> str:
@@ -39,10 +39,10 @@ class QualityReport:
 # Thresholds (tunable)
 # ---------------------------------------------------------------------------
 
-MIN_BLUR_SCORE = 50.0        # Laplacian variance below this → too blurry
-MIN_BRIGHTNESS = 40.0        # Mean pixel value below this → too dark
-MAX_BRIGHTNESS = 220.0       # Mean pixel value above this → too bright
-MIN_FACE_AREA = 80 * 80      # Minimum face bounding-box area in pixels
+MIN_BLUR_SCORE = 10.0  # Laplacian variance below this → too blurry
+MIN_BRIGHTNESS = 20.0  # Mean pixel value below this → too dark
+MAX_BRIGHTNESS = 240.0  # Mean pixel value above this → too bright
+MIN_FACE_AREA = 60 * 60  # Minimum face bounding-box area in pixels
 
 
 def assess_quality(
