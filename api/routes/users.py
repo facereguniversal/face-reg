@@ -9,7 +9,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,16 +96,19 @@ async def delete_user(
 )
 async def enroll_faces(
     user_id: uuid.UUID,
-    images: list[UploadFile] = File(..., description="4-6 face images"),
+    request: Request,
     db: AsyncSession = Depends(get_db),
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
     """Upload face images to enroll embeddings for a user."""
     try:
-        if len(images) < 4:
+        form = await request.form()
+        uploaded_files = form.getlist("images")
+
+        if not uploaded_files or len(uploaded_files) < 4:
             raise HTTPException(status_code=400, detail="At least 4 images required")
-        if len(images) > 6:
+        if len(uploaded_files) > 6:
             raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
 
         user_svc = UserService(db)
@@ -121,8 +124,14 @@ async def enroll_faces(
 
         # Read, downscale to max 480px, and compress images to protect RAM
         image_data: list[bytes] = []
-        for img_file in images:
-            raw_data = await img_file.read()
+        for img_file in uploaded_files:
+            if hasattr(img_file, "read"):
+                raw_data = await img_file.read()
+            elif isinstance(img_file, bytes):
+                raw_data = img_file
+            else:
+                continue
+
             np_arr = np.frombuffer(raw_data, np.uint8)
             img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if img is not None:
