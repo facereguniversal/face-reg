@@ -10,6 +10,7 @@ from typing import Any
 import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.jwt_handler import get_current_user, require_admin
@@ -145,6 +146,6 @@ async def enroll_faces(
     except Exception as e:
         import traceback
 
-        error_msg = f"{type(e).__name__}: {str(e)}"
+        error_msg = f"EXCEPT: {type(e).__name__}: {str(e)}"
         logger.error("Enrollment exception: %s\n%s", error_msg, traceback.format_exc())
-        raise HTTPException(status_code=500, detail=error_msg)
+        return JSONResponse(status_code=500, content={"detail": error_msg})
