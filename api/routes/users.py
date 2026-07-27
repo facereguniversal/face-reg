@@ -19,7 +19,6 @@ from api.models.schemas import UserCreate, UserResponse, EnrollResponse
 from api.services.database import get_db, async_session_factory, ensure_tables_exist
 from api.services.user_service import UserService
 from api.services.face_service import FaceService
-from api.services.dependencies import get_face_service, get_client_ip
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,10 +33,9 @@ async def create_user(
     body: UserCreate,
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, Any] = Depends(require_admin),
-    client_ip: str = Depends(get_client_ip),
 ):
     """Create a new user. Admin only."""
-    svc = UserService(db, source_ip=client_ip)
+    svc = UserService(db)
     existing = await svc.get_by_email(body.email)
     if existing:
         raise HTTPException(
@@ -80,10 +78,9 @@ async def delete_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     _admin: dict[str, Any] = Depends(require_admin),
-    client_ip: str = Depends(get_client_ip),
 ):
     """Delete a user and all associated face templates. Admin only."""
-    svc = UserService(db, source_ip=client_ip)
+    svc = UserService(db)
     user = await svc.get_by_id(str(user_id))
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -98,11 +95,17 @@ async def delete_user(
 async def enroll_faces(
     user_id: uuid.UUID,
     request: Request,
-    face_svc: FaceService = Depends(get_face_service),
-    client_ip: str = Depends(get_client_ip),
 ):
     """Upload face images to enroll embeddings for a user (supports multipart form-data and JSON base64)."""
     try:
+        face_svc = getattr(request.app.state, "face_service", None)
+        if face_svc is None:
+            face_svc = FaceService()
+            request.app.state.face_service = face_svc
+
+        forwarded = request.headers.get("X-Forwarded-For")
+        client_ip = forwarded.split(",")[0].strip() if forwarded else ("0.0.0.0")
+
         await ensure_tables_exist()
         async with async_session_factory() as db:
             user_svc = UserService(db)
