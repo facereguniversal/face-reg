@@ -68,7 +68,7 @@ class FaceTemplateResponse(BaseModel):
 class EnrollResponse(BaseModel):
     template_ids: list[uuid.UUID]
     status: str = "enrolled"
-    quality_scores: list[float]
+    quality_scores: list[float | None] = []
 
 
 # ---------------------------------------------------------------------------
