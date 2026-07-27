@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import gc
 import logging
 import uuid
 from typing import Any
 
+import cv2
+import numpy as np
 from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.jwt_handler import get_current_user, require_admin
 from api.models.schemas import UserCreate, UserResponse, EnrollResponse
-from api.services.database import get_db
+from api.services.database import get_db, async_session_factory, ensure_tables_exist
 from api.services.user_service import UserService
+from api.services.face_service import FaceService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -92,7 +98,94 @@ async def enroll_faces(
     images: list[UploadFile] = File(default=[]),
 ):
     """Upload face images to enroll embeddings for a user."""
-    return EnrollResponse(
-        template_ids=[uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()],
-        quality_scores=[0.95, 0.95, 0.95, 0.95],
-    )
+    try:
+        face_svc = getattr(request.app.state, "face_service", None)
+        if face_svc is None:
+            face_svc = FaceService()
+            request.app.state.face_service = face_svc
+
+        forwarded = request.headers.get("X-Forwarded-For")
+        client_ip = forwarded.split(",")[0].strip() if forwarded else "0.0.0.0"
+
+        await ensure_tables_exist()
+        async with async_session_factory() as db:
+            user_svc = UserService(db)
+            user = await user_svc.get_by_id(str(user_id))
+            if not user:
+                email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
+                user = await user_svc.create_with_id(
+                    user_id=user_id,
+                    name="Demo Guest",
+                    email=email,
+                )
+                await db.commit()
+
+            raw_byte_list: list[bytes] = []
+            if images:
+                for img_file in images:
+                    raw_byte_list.append(await img_file.read())
+            else:
+                content_type = request.headers.get("content-type", "").lower()
+                if "application/json" in content_type:
+                    body_json = await request.json()
+                    raw_images = body_json.get("images", [])
+                    for item in raw_images:
+                        if isinstance(item, str):
+                            b64_str = item.split(",", 1)[1] if "," in item else item
+                            try:
+                                raw_byte_list.append(base64.b64decode(b64_str))
+                            except Exception:
+                                continue
+                else:
+                    form = await request.form()
+                    uploaded_files = form.getlist("images")
+                    for img_file in uploaded_files:
+                        if hasattr(img_file, "read"):
+                            raw_byte_list.append(await img_file.read())
+
+            if len(raw_byte_list) < 4:
+                raise HTTPException(
+                    status_code=400, detail="At least 4 valid images required"
+                )
+            if len(raw_byte_list) > 6:
+                raw_byte_list = raw_byte_list[:6]
+
+            # Sequential downscaling to 320px with immediate cleanup to keep RAM < 35MB
+            processed_data: list[bytes] = []
+            for raw_bytes in raw_byte_list:
+                try:
+                    np_arr = np.frombuffer(raw_bytes, np.uint8)
+                    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                    del np_arr
+                    if img is not None:
+                        h, w = img.shape[:2]
+                        if max(h, w) > 320:
+                            scale = 320.0 / max(h, w)
+                            img = cv2.resize(img, (int(w * scale), int(h * scale)))
+                        _, reencoded = cv2.imencode(
+                            ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75]
+                        )
+                        processed_data.append(reencoded.tobytes())
+                        del img
+                    else:
+                        processed_data.append(raw_bytes)
+                except Exception:
+                    processed_data.append(raw_bytes)
+
+            del raw_byte_list
+            gc.collect()
+
+            result = await face_svc.enroll(
+                user_id=user.id, image_data=processed_data, db=db, client_ip=client_ip
+            )
+            await db.commit()
+            gc.collect()
+            return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+
+        error_msg = f"EXCEPT: {type(e).__name__}: {str(e)}"
+        logger.error("Enrollment exception: %s\n%s", error_msg, traceback.format_exc())
+        return JSONResponse(status_code=500, content={"detail": error_msg})
