@@ -16,14 +16,14 @@ function getHeaders() {
 }
 
 const video = document.getElementById('webcam');
-const canvas = document.getElementById('canvas');
-const feedbackText = document.getElementById('feedbackText');
-const feedbackPanel = document.getElementById('feedbackPanel');
-const guide = document.getElementById('guide');
-const captureBtn = document.getElementById('captureBtn');
-const submitBtn = document.getElementById('submitBtn');
+const canvas = document.createElement('canvas');
+const feedbackText = document.getElementById('feedback-text') || document.getElementById('feedbackText');
+const feedbackPanel = document.getElementById('feedback-panel') || document.getElementById('feedbackPanel');
+const guide = document.getElementById('face-guide') || document.getElementById('guide');
+const captureBtn = document.getElementById('capture-btn') || document.getElementById('captureBtn');
+const submitBtn = document.getElementById('submit-btn') || document.getElementById('submitBtn');
 const gallery = document.getElementById('gallery');
-const frameCountEl = document.getElementById('frameCount');
+const frameCountEl = document.getElementById('frame-count') || document.getElementById('frameCount');
 
 let capturedFrames = []; // Array of Blobs
 let isProcessing = false;
@@ -37,6 +37,7 @@ async function setupWebcam() {
         video.srcObject = stream;
         video.onloadedmetadata = () => {
             video.play();
+            if (captureBtn) captureBtn.disabled = false;
             startValidationLoop();
         };
     } catch (err) {
@@ -58,11 +59,13 @@ function startValidationLoop() {
 function getFrameBlob() {
     return new Promise(resolve => {
         const targetWidth = 480;
-        const aspectRatio = video.videoWidth ? (video.videoHeight / video.videoWidth) : 0.75;
+        const aspectRatio = (video && video.videoWidth) ? (video.videoHeight / video.videoWidth) : 0.75;
         canvas.width = targetWidth;
         canvas.height = Math.round(targetWidth * aspectRatio);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (video) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        }
         canvas.toBlob(resolve, 'image/jpeg', 0.75);
     });
 }
@@ -101,51 +104,53 @@ async function validateCurrentFrame() {
 
 // UI Feedback
 function setFeedback(msg, type) {
-    feedbackText.textContent = msg;
-    feedbackPanel.className = type;
-    guide.className = type === "success" ? "good" : (type === "error" ? "bad" : "");
+    if (feedbackText) feedbackText.textContent = msg;
+    if (feedbackPanel) feedbackPanel.className = type;
+    if (guide) guide.className = type === "success" ? "good" : (type === "error" ? "bad" : "");
 }
 
 // Capture button click
-captureBtn.addEventListener('click', async () => {
-    if (capturedFrames.length >= MAX_FRAMES) return;
+if (captureBtn) {
+    captureBtn.addEventListener('click', async () => {
+        if (capturedFrames.length >= MAX_FRAMES) return;
 
-    captureBtn.disabled = true;
-    captureBtn.textContent = "Processing...";
+        captureBtn.disabled = true;
+        captureBtn.textContent = "Processing...";
 
-    const blob = await getFrameBlob();
-    
-    // Quick validation before adding to gallery
-    const formData = new FormData();
-    formData.append("image", blob, `frame_${Date.now()}.jpg`);
-
-    try {
-        const response = await fetch(`${API_BASE}/faces/validate`, {
-            method: 'POST',
-            body: formData,
-            headers: getHeaders()
-        });
+        const blob = await getFrameBlob();
         
-        if (response.ok) {
-            const result = await response.json();
-            if (result && result.passed) {
-                addFrameToGallery(blob);
-            } else {
-                const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Quality check failed");
-                alert("Captured frame failed quality check: " + issuesText);
-            }
-        } else {
-            addFrameToGallery(blob);
-        }
-    } catch (e) {
-        console.error("Capture validation failed", e);
-        // Fallback: still add if API is unreachable for validation
-        addFrameToGallery(blob); 
-    }
+        // Quick validation before adding to gallery
+        const formData = new FormData();
+        formData.append("image", blob, `frame_${Date.now()}.jpg`);
 
-    captureBtn.textContent = "Capture Frame";
-    captureBtn.disabled = capturedFrames.length >= MAX_FRAMES;
-});
+        try {
+            const response = await fetch(`${API_BASE}/faces/validate`, {
+                method: 'POST',
+                body: formData,
+                headers: getHeaders()
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result && result.passed) {
+                    addFrameToGallery(blob);
+                } else {
+                    const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Quality check failed");
+                    alert("Captured frame failed quality check: " + issuesText);
+                }
+            } else {
+                addFrameToGallery(blob);
+            }
+        } catch (e) {
+            console.error("Capture validation failed", e);
+            // Fallback: still add if API is unreachable for validation
+            addFrameToGallery(blob); 
+        }
+
+        captureBtn.textContent = "Capture Frame";
+        captureBtn.disabled = capturedFrames.length >= MAX_FRAMES;
+    });
+}
 
 // Gallery Management
 function addFrameToGallery(blob) {
@@ -156,12 +161,12 @@ function addFrameToGallery(blob) {
 function removeFrame(index) {
     capturedFrames.splice(index, 1);
     renderGallery();
-    captureBtn.disabled = false;
+    if (captureBtn) captureBtn.disabled = false;
 }
 
 function renderGallery() {
-    gallery.innerHTML = '';
-    frameCountEl.textContent = capturedFrames.length;
+    if (gallery) gallery.innerHTML = '';
+    if (frameCountEl) frameCountEl.textContent = capturedFrames.length;
 
     capturedFrames.forEach((blob, idx) => {
         const item = document.createElement('div');
@@ -177,54 +182,56 @@ function renderGallery() {
         
         item.appendChild(img);
         item.appendChild(btn);
-        gallery.appendChild(item);
+        if (gallery) gallery.appendChild(item);
     });
 
-    submitBtn.disabled = capturedFrames.length < MIN_FRAMES;
+    if (submitBtn) submitBtn.disabled = capturedFrames.length < MIN_FRAMES;
 }
 
 // Complete Enrollment
-submitBtn.addEventListener('click', async () => {
-    if (capturedFrames.length < MIN_FRAMES) return;
+if (submitBtn) {
+    submitBtn.addEventListener('click', async () => {
+        if (capturedFrames.length < MIN_FRAMES) return;
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = "Enrolling...";
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Enrolling...";
 
-    const formData = new FormData();
-    capturedFrames.forEach((blob, idx) => {
-        formData.append("images", blob, `enroll_${idx}.jpg`);
-    });
-
-    try {
-        const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
-            method: 'POST',
-            body: formData,
-            headers: getHeaders()
+        const formData = new FormData();
+        capturedFrames.forEach((blob, idx) => {
+            formData.append("images", blob, `enroll_${idx}.jpg`);
         });
 
-        if (response.ok) {
-            const data = await response.json();
-            alert(`Success! Enrolled templates: ${data.template_ids.length}`);
-            window.location.reload();
-        } else {
-            const text = await response.text();
-            let errMsg = "Unknown error";
-            try {
-                const err = JSON.parse(text);
-                errMsg = err.detail || text;
-            } catch (_) {
-                errMsg = text || response.statusText;
+        try {
+            const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
+                method: 'POST',
+                body: formData,
+                headers: getHeaders()
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                alert(`Success! Enrolled templates: ${data.template_ids.length}`);
+                window.location.reload();
+            } else {
+                const text = await response.text();
+                let errMsg = "Unknown error";
+                try {
+                    const err = JSON.parse(text);
+                    errMsg = err.detail || text;
+                } catch (_) {
+                    errMsg = text || response.statusText;
+                }
+                alert("Enrollment failed: " + errMsg);
             }
-            alert("Enrollment failed: " + errMsg);
+        } catch (e) {
+            alert("Enrollment error: " + e.message);
+            console.error(e);
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Complete Enrollment";
         }
-    } catch (e) {
-        alert("Enrollment error: " + e.message);
-        console.error(e);
-    } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = "Complete Enrollment";
-    }
-});
+    });
+}
 
 // Start app
 setupWebcam();
