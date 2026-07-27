@@ -11,13 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 logger = logging.getLogger(__name__)
 
-# Ensure data directory exists for file-based SQLite database
-data_dir = Path("./data")
+# Ensure fallback data directory exists
+data_dir = Path("/tmp")
 data_dir.mkdir(parents=True, exist_ok=True)
 
 raw_db_url: str = os.environ.get(
     "DATABASE_URL",
-    "sqlite+aiosqlite:///./data/app.db",
+    "sqlite+aiosqlite:////tmp/app.db",
 )
 
 # Normalize PostgreSQL driver prefixes for async SQLAlchemy
