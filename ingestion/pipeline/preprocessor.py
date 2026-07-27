@@ -36,13 +36,13 @@ class QualityReport:
 
 
 # ---------------------------------------------------------------------------
-# Thresholds (tunable)
+# Thresholds (Optimized for real-world webcams)
 # ---------------------------------------------------------------------------
 
-MIN_BLUR_SCORE = 10.0  # Laplacian variance below this → too blurry
-MIN_BRIGHTNESS = 20.0  # Mean pixel value below this → too dark
-MAX_BRIGHTNESS = 240.0  # Mean pixel value above this → too bright
-MIN_FACE_AREA = 60 * 60  # Minimum face bounding-box area in pixels
+MIN_BLUR_SCORE = 2.0  # Laplacian variance below this → too blurry
+MIN_BRIGHTNESS = 5.0  # Mean pixel value below this → too dark
+MAX_BRIGHTNESS = 250.0  # Mean pixel value above this → too bright
+MIN_FACE_AREA = 30 * 30  # Minimum face bounding-box area in pixels
 
 
 def assess_quality(

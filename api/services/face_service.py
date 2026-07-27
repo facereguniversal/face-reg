@@ -181,6 +181,15 @@ class FaceService:
                     report,
                 )
 
+        # Fallback for webcam capture: if quality check filtered images, use all decodable frames
+        if len(valid_images) < 4:
+            valid_images = [
+                d
+                for d in image_data
+                if cv2.imdecode(np.frombuffer(d, np.uint8), cv2.IMREAD_COLOR)
+                is not None
+            ]
+
         if len(valid_images) < 4:
             raise HTTPException(
                 status_code=400,
