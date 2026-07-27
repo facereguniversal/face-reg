@@ -83,18 +83,19 @@ async function validateCurrentFrame() {
             headers: getHeaders(),
         });
 
-        if (!response.ok) throw new Error("Validation API error");
+        if (!response.ok) throw new Error(`Validation API error (${response.status})`);
         
         const result = await response.json();
         
-        if (result.passed) {
+        if (result && result.passed) {
             setFeedback(`Good quality (Score: ${Math.round(result.quality_score || 0)})`, "success");
         } else {
-            setFeedback("Issues: " + result.issues.join(", "), "error");
+            const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Validation error");
+            setFeedback("Issues: " + issuesText, "error");
         }
     } catch (e) {
         console.error(e);
-        // Silently fail validation loop to not interrupt UX
+        setFeedback("Backend service connecting... (" + e.message + ")", "error");
     } finally {
         isProcessing = false;
     }
@@ -129,11 +130,14 @@ captureBtn.addEventListener('click', async () => {
         
         if (response.ok) {
             const result = await response.json();
-            if (result.passed) {
+            if (result && result.passed) {
                 addFrameToGallery(blob);
             } else {
-                alert("Captured frame failed quality check: " + result.issues.join(", "));
+                const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Quality check failed");
+                alert("Captured frame failed quality check: " + issuesText);
             }
+        } else {
+            addFrameToGallery(blob);
         }
     } catch (e) {
         console.error("Capture validation failed", e);
