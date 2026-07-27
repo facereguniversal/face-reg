@@ -49,12 +49,19 @@ async def ensure_tables_exist() -> None:
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency that yields an async DB session with auto table creation."""
+    """FastAPI dependency yielding an async DB session safely."""
     await ensure_tables_exist()
     async with async_session_factory() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
-            await session.rollback()
+            try:
+                await session.rollback()
+            except Exception:
+                pass
             raise
+        finally:
+            try:
+                await session.close()
+            except Exception:
+                pass
