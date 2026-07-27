@@ -82,6 +82,9 @@ class LegacyPbkdf2Sha256Hasher:
 
 password_hash_context = PasswordHash((BcryptHasher(), LegacyPbkdf2Sha256Hasher()))
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/auth/login", auto_error=False
+)
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +158,21 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, Any
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token type")
     return payload
+
+
+async def get_optional_user(
+    token: str | None = Depends(oauth2_scheme_optional),
+) -> dict[str, Any] | None:
+    """Decode optional access token without raising error if missing."""
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+        if payload.get("type") == "access":
+            return payload
+    except Exception:
+        pass
+    return None
 
 
 async def require_admin(

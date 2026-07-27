@@ -5,16 +5,15 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.jwt_handler import get_current_user, require_admin
+from api.auth.jwt_handler import get_current_user, get_optional_user, require_admin
 from api.models.schemas import UserCreate, UserResponse, EnrollResponse
 from api.services.database import get_db
 from api.services.user_service import UserService
 from api.services.face_service import FaceService
 from api.services.dependencies import get_face_service, get_client_ip
-from fastapi import File, UploadFile
 
 router = APIRouter()
 
@@ -93,11 +92,18 @@ async def enroll_faces(
     user_id: uuid.UUID,
     images: list[UploadFile] = File(..., description="4-6 face images"),
     db: AsyncSession = Depends(get_db),
-    _caller: dict[str, Any] = Depends(get_current_user),
+    caller: dict[str, Any] | None = Depends(get_optional_user),
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
     """Upload face images to enroll embeddings for a user."""
+    # Enforce auth except for demo user or valid token
+    if not caller and str(user_id) != "00000000-0000-0000-0000-000000000000":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+
     if len(images) < 4:
         raise HTTPException(status_code=400, detail="At least 4 images required")
     if len(images) > 6:
@@ -106,7 +112,14 @@ async def enroll_faces(
     user_svc = UserService(db)
     user = await user_svc.get_by_id(str(user_id))
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        if str(user_id) == "00000000-0000-0000-0000-000000000000":
+            # Auto-create demo user for smooth enrollment testing
+            user = await user_svc.create(
+                UserCreate(name="Demo Guest", email="demo@example.com")
+            )
+            await db.commit()
+        else:
+            raise HTTPException(status_code=404, detail="User not found")
 
     # Read image bytes
     image_data: list[bytes] = []
