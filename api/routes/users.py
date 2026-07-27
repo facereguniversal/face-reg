@@ -10,7 +10,7 @@ from typing import Any
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -95,6 +95,7 @@ async def delete_user(
 async def enroll_faces(
     user_id: uuid.UUID,
     request: Request,
+    images: list[UploadFile] = File(default=[]),
 ):
     """Upload face images to enroll embeddings for a user (supports multipart form-data and JSON base64)."""
     try:
@@ -119,33 +120,28 @@ async def enroll_faces(
                 )
                 await db.commit()
 
-            content_type = request.headers.get("content-type", "").lower()
             image_data: list[bytes] = []
-
-            if "application/json" in content_type:
-                body_json = await request.json()
-                raw_images = body_json.get("images", [])
-                if not isinstance(raw_images, list):
-                    raise HTTPException(status_code=400, detail="images must be a list")
-
-                for item in raw_images:
-                    if isinstance(item, str):
-                        b64_str = item.split(",", 1)[1] if "," in item else item
-                        try:
-                            image_data.append(base64.b64decode(b64_str))
-                        except Exception:
-                            continue
+            if images:
+                for img_file in images:
+                    image_data.append(await img_file.read())
             else:
-                form = await request.form()
-                uploaded_files = form.getlist("images")
-                for img_file in uploaded_files:
-                    if hasattr(img_file, "read"):
-                        raw_data = await img_file.read()
-                    elif isinstance(img_file, bytes):
-                        raw_data = img_file
-                    else:
-                        continue
-                    image_data.append(raw_data)
+                content_type = request.headers.get("content-type", "").lower()
+                if "application/json" in content_type:
+                    body_json = await request.json()
+                    raw_images = body_json.get("images", [])
+                    for item in raw_images:
+                        if isinstance(item, str):
+                            b64_str = item.split(",", 1)[1] if "," in item else item
+                            try:
+                                image_data.append(base64.b64decode(b64_str))
+                            except Exception:
+                                continue
+                else:
+                    form = await request.form()
+                    uploaded_files = form.getlist("images")
+                    for img_file in uploaded_files:
+                        if hasattr(img_file, "read"):
+                            image_data.append(await img_file.read())
 
             if len(image_data) < 4:
                 raise HTTPException(
