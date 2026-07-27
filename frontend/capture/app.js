@@ -1,7 +1,11 @@
-const API_BASE = `${window.location.origin}/api`;
+const API_BASE = "/api";
+const MIN_FRAMES = 4;
+const MAX_FRAMES = 6;
+const USER_ID = "00000000-0000-0000-0000-000000000000";
+
+// Handle optional token parameter from URL
 const urlParams = new URLSearchParams(window.location.search);
-const USER_ID = urlParams.get('userId') || "00000000-0000-0000-0000-000000000000"; 
-const TOKEN = urlParams.get('token') || "";
+const TOKEN = urlParams.get('token') || '';
 
 function getHeaders() {
     const headers = {};
@@ -12,60 +16,54 @@ function getHeaders() {
 }
 
 const video = document.getElementById('webcam');
-const guide = document.getElementById('face-guide');
-const feedbackPanel = document.getElementById('feedback-panel');
-const feedbackText = document.getElementById('feedback-text');
-const captureBtn = document.getElementById('capture-btn');
-const submitBtn = document.getElementById('submit-btn');
+const canvas = document.getElementById('canvas');
+const feedbackText = document.getElementById('feedbackText');
+const feedbackPanel = document.getElementById('feedbackPanel');
+const guide = document.getElementById('guide');
+const captureBtn = document.getElementById('captureBtn');
+const submitBtn = document.getElementById('submitBtn');
 const gallery = document.getElementById('gallery');
-const frameCountEl = document.getElementById('frame-count');
+const frameCountEl = document.getElementById('frameCount');
 
-let stream = null;
-let capturedFrames = [];
-const MAX_FRAMES = 6;
-const MIN_FRAMES = 4;
-
+let capturedFrames = []; // Array of Blobs
 let isProcessing = false;
 
 // Initialize Webcam
-async function startWebcam() {
+async function setupWebcam() {
     try {
-        stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: "user"
-            }
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
         });
         video.srcObject = stream;
-        
-        // Setup validation loop
-        video.addEventListener('loadedmetadata', () => {
-            captureBtn.disabled = false;
-            validateLoop();
-        });
+        video.onloadedmetadata = () => {
+            video.play();
+            startValidationLoop();
+        };
     } catch (err) {
-        setFeedback("Error accessing webcam: " + err.message, "error");
+        setFeedback("Camera access denied or unavailable", "error");
+        console.error(err);
     }
 }
 
-// Continuous Validation
-async function validateLoop() {
-    if (stream && !isProcessing) {
-        await validateCurrentFrame();
-    }
-    setTimeout(validateLoop, 2000); // Check every 2 seconds
+// Continuous Quality Validation (Debounced)
+function startValidationLoop() {
+    setInterval(() => {
+        if (!isProcessing && capturedFrames.length < MAX_FRAMES) {
+            validateCurrentFrame();
+        }
+    }, 1500);
 }
 
-// Extract frame as Blob
+// Capture current frame from webcam as lightweight 480px JPEG
 function getFrameBlob() {
-    return new Promise((resolve) => {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+    return new Promise(resolve => {
+        const targetWidth = 480;
+        const aspectRatio = video.videoWidth ? (video.videoHeight / video.videoWidth) : 0.75;
+        canvas.width = targetWidth;
+        canvas.height = Math.round(targetWidth * aspectRatio);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0);
-        canvas.toBlob(resolve, 'image/jpeg', 0.9);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(resolve, 'image/jpeg', 0.75);
     });
 }
 
@@ -185,7 +183,7 @@ function renderGallery() {
     submitBtn.disabled = capturedFrames.length < MIN_FRAMES;
 }
 
-// Final Submission
+// Complete Enrollment
 submitBtn.addEventListener('click', async () => {
     if (capturedFrames.length < MIN_FRAMES) return;
 
@@ -228,5 +226,5 @@ submitBtn.addEventListener('click', async () => {
     }
 });
 
-// Init
-startWebcam();
+// Start app
+setupWebcam();
