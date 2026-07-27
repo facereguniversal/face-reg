@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -15,6 +16,7 @@ from api.services.user_service import UserService
 from api.services.face_service import FaceService
 from api.services.dependencies import get_face_service, get_client_ip
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -96,30 +98,39 @@ async def enroll_faces(
     client_ip: str = Depends(get_client_ip),
 ):
     """Upload face images to enroll embeddings for a user."""
-    if len(images) < 4:
-        raise HTTPException(status_code=400, detail="At least 4 images required")
-    if len(images) > 6:
-        raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
+    try:
+        if len(images) < 4:
+            raise HTTPException(status_code=400, detail="At least 4 images required")
+        if len(images) > 6:
+            raise HTTPException(status_code=400, detail="Maximum 6 images allowed")
 
-    user_svc = UserService(db)
-    user = await user_svc.get_by_id(str(user_id))
-    if not user:
-        email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
-        user = await user_svc.create_with_id(
-            user_id=user_id,
-            name="Demo Guest",
-            email=email,
+        user_svc = UserService(db)
+        user = await user_svc.get_by_id(str(user_id))
+        if not user:
+            email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
+            user = await user_svc.create_with_id(
+                user_id=user_id,
+                name="Demo Guest",
+                email=email,
+            )
+            await db.commit()
+
+        # Read image bytes
+        image_data: list[bytes] = []
+        for img in images:
+            data = await img.read()
+            image_data.append(data)
+
+        # Delegate to face service (detection → alignment → embedding → store)
+        result = await face_svc.enroll(
+            user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
         )
-        await db.commit()
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
 
-    # Read image bytes
-    image_data: list[bytes] = []
-    for img in images:
-        data = await img.read()
-        image_data.append(data)
-
-    # Delegate to face service (detection → alignment → embedding → store)
-    result = await face_svc.enroll(
-        user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
-    )
-    return result
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        logger.error("Enrollment exception: %s\n%s", error_msg, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=error_msg)

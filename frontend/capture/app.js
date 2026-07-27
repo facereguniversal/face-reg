@@ -209,11 +209,18 @@ submitBtn.addEventListener('click', async () => {
             alert(`Success! Enrolled templates: ${data.template_ids.length}`);
             window.location.reload();
         } else {
-            const err = await response.json();
-            alert("Enrollment failed: " + (err.detail || "Unknown error"));
+            const text = await response.text();
+            let errMsg = "Unknown error";
+            try {
+                const err = JSON.parse(text);
+                errMsg = err.detail || text;
+            } catch (_) {
+                errMsg = text || response.statusText;
+            }
+            alert("Enrollment failed: " + errMsg);
         }
     } catch (e) {
-        alert("Network error during enrollment");
+        alert("Enrollment error: " + e.message);
         console.error(e);
     } finally {
         submitBtn.disabled = false;
