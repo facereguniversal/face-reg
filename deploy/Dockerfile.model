@@ -16,4 +16,4 @@ RUN pip install --upgrade pip && \
 COPY model_server/ ./
 
 EXPOSE 8001
-CMD ["uvicorn", "embed:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["sh", "-c", "uvicorn embed:app --host 0.0.0.0 --port ${PORT:-8001}"]
