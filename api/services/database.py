@@ -7,10 +7,18 @@ from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-DATABASE_URL: str = os.environ.get(
+raw_db_url: str = os.environ.get(
     "DATABASE_URL",
-    "postgresql+asyncpg://faceuser:facepass@localhost:5432/facedb",
+    "sqlite+aiosqlite:///:memory:",
 )
+
+# Normalize PostgreSQL driver prefixes for async SQLAlchemy
+if raw_db_url.startswith("postgresql://"):
+    DATABASE_URL = raw_db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+elif raw_db_url.startswith("postgres://"):
+    DATABASE_URL = raw_db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+else:
+    DATABASE_URL = raw_db_url
 
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
