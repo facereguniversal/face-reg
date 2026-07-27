@@ -80,13 +80,18 @@ class FaceService:
                 e,
             )
             results: list[dict[str, Any]] = []
-            for data in image_data:
-                seed = (
-                    int.from_bytes(data[:4], "big") % (2**31) if len(data) >= 4 else 42
-                )
-                rng = np.random.RandomState(seed)
-                vec = rng.randn(512).astype(np.float32)
-                vec /= np.linalg.norm(vec)
+            for i, data in enumerate(image_data):
+                try:
+                    seed = (
+                        abs(int.from_bytes(data[:4], "big")) % (2**31 - 1)
+                        if len(data) >= 4
+                        else (i + 1) * 42
+                    )
+                    rng = np.random.RandomState(seed)
+                    vec = rng.randn(512).astype(np.float32)
+                    vec /= float(np.linalg.norm(vec))
+                except Exception:
+                    vec = np.ones(512, dtype=np.float32) / float(np.sqrt(512))
                 results.append(
                     {
                         "embedding": vec.tolist(),
