@@ -37,8 +37,8 @@ async def validate_face(
     return await face_svc.validate(data)
 
 
-@router.post("/enroll_json", response_model=EnrollResponse)
-async def enroll_json(
+@router.post("/enroll_base64", response_model=EnrollResponse)
+async def enroll_base64(
     body: EnrollJsonRequest,
     db: AsyncSession = Depends(get_db),
     face_svc: FaceService = Depends(get_face_service),

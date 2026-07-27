@@ -206,7 +206,7 @@ if (submitBtn) {
                 }))
             );
 
-            const response = await fetch(`${API_BASE}/faces/enroll_json`, {
+            const response = await fetch(`${API_BASE}/faces/enroll_base64`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
