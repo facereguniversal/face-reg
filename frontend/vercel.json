@@ -4,24 +4,24 @@
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/api/:match*",
-      "destination": "https://face-reg-production.up.railway.app/api/:match*"
+      "source": "/api/(.*)",
+      "destination": "https://face-reg-production.up.railway.app/api/$1"
     },
     {
       "source": "/capture",
       "destination": "/capture/index.html"
     },
     {
-      "source": "/capture/:path*",
-      "destination": "/capture/:path*"
+      "source": "/capture/(.*)",
+      "destination": "/capture/$1"
     },
     {
       "source": "/checkin",
       "destination": "/checkin/index.html"
     },
     {
-      "source": "/checkin/:path*",
-      "destination": "/checkin/:path*"
+      "source": "/checkin/(.*)",
+      "destination": "/checkin/$1"
     }
   ],
   "redirects": [
