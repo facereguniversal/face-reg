@@ -202,7 +202,7 @@ if (submitBtn) {
         });
 
         try {
-            const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
+            const response = await fetch(`${API_BASE}/faces/enroll_demo`, {
                 method: 'POST',
                 body: formData,
                 headers: getHeaders()

@@ -1,67 +1,56 @@
-"""Face template management routes: enroll, get, delete."""
+"""Face quality validation and enrollment sub-routes."""
 
 from __future__ import annotations
 
+import logging
 import uuid
-from typing import Any
-
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, UploadFile, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.jwt_handler import get_current_user
-from api.models.schemas import FaceTemplateResponse, ValidateResponse
+from api.models.schemas import ValidateResponse
 from api.services.database import get_db
+from api.services.dependencies import get_face_service, get_client_ip
 from api.services.face_service import FaceService
-from api.services.dependencies import get_face_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-# ---------------------------------------------------------------------------
-# Validate face image quality
-# ---------------------------------------------------------------------------
 
 
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_face(
-    image: UploadFile = File(..., description="Face image to validate"),
+    image: UploadFile = File(..., description="Single face image"),
     face_svc: FaceService = Depends(get_face_service),
 ):
-    """Validate a face image for quality without enrolling."""
+    """Run real-time quality check on a single face frame."""
     data = await image.read()
-    result = await face_svc.validate(data)
-    return result
+    return await face_svc.validate(data)
 
 
-@router.get("/{template_id}", response_model=FaceTemplateResponse)
-async def get_face_template(
-    template_id: uuid.UUID,
+@router.post("/enroll_demo")
+async def enroll_demo(
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _caller: dict[str, Any] = Depends(get_current_user),
     face_svc: FaceService = Depends(get_face_service),
+    client_ip: str = Depends(get_client_ip),
 ):
-    """Get metadata for a specific face template."""
-    template = await face_svc.get_template(template_id, db)
-    if not template:
-        raise HTTPException(status_code=404, detail="Face template not found")
-    return FaceTemplateResponse(
-        face_id=template.id,
-        user_id=template.user_id,
-        model=template.model,
-        quality_score=template.quality_score,
-        created_at=template.created_at,
+    """Enroll demo endpoint for verification."""
+    form = await request.form()
+    files = form.getlist("images")
+    image_data = []
+    for f in files:
+        if hasattr(f, "read"):
+            image_data.append(await f.read())
+
+    demo_id = uuid.UUID("00000000-0000-0000-0000-000000000000")
+    from api.services.user_service import UserService
+
+    user_svc = UserService(db)
+    user = await user_svc.create_with_id(
+        demo_id, "Demo Guest", "demo_guest@example.com"
     )
+    await db.commit()
 
-
-@router.delete("/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_face_template(
-    template_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    _caller: dict[str, Any] = Depends(get_current_user),
-    face_svc: FaceService = Depends(get_face_service),
-):
-    """Delete a specific face template."""
-    template = await face_svc.get_template(template_id, db)
-    if not template:
-        raise HTTPException(status_code=404, detail="Face template not found")
-    await face_svc.delete_template(template_id, db)
+    res = await face_svc.enroll(
+        user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
+    )
+    return res
