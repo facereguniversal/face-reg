@@ -196,16 +196,26 @@ if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.textContent = "Enrolling...";
 
-        const formData = new FormData();
-        capturedFrames.forEach((blob, idx) => {
-            formData.append("images", blob, `enroll_${idx}.jpg`);
-        });
-
         try {
-            const response = await fetch(`${API_BASE}/faces/enroll_demo`, {
+            // Convert Blobs to Base64 data URLs
+            const base64Images = await Promise.all(
+                capturedFrames.map(blob => new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                }))
+            );
+
+            const response = await fetch(`${API_BASE}/faces/enroll_json`, {
                 method: 'POST',
-                body: formData,
-                headers: getHeaders()
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...getHeaders()
+                },
+                body: JSON.stringify({
+                    user_id: USER_ID,
+                    images: base64Images
+                })
             });
 
             if (response.ok) {
