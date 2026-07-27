@@ -58,7 +58,8 @@ class FaceDetector:
             from insightface.app import FaceAnalysis
 
             self._detector = FaceAnalysis(
-                name="buffalo_l",
+                name="buffalo_sc",
+                allowed_modules=["detection"],
                 providers=["CUDAExecutionProvider", "CPUExecutionProvider"],
             )
             self._detector.prepare(ctx_id=0, det_size=(640, 640))
