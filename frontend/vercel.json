@@ -1,9 +1,27 @@
 {
   "version": 2,
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     {
       "source": "/api/:match*",
       "destination": "https://face-reg-production.up.railway.app/api/:match*"
+    },
+    {
+      "source": "/capture",
+      "destination": "/capture/index.html"
+    },
+    {
+      "source": "/capture/:path*",
+      "destination": "/capture/:path*"
+    },
+    {
+      "source": "/checkin",
+      "destination": "/checkin/index.html"
+    },
+    {
+      "source": "/checkin/:path*",
+      "destination": "/checkin/:path*"
     }
   ],
   "redirects": [

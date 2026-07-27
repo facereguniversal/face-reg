@@ -6,6 +6,22 @@
     {
       "source": "/api/:match*",
       "destination": "https://face-reg-production.up.railway.app/api/:match*"
+    },
+    {
+      "source": "/capture",
+      "destination": "/frontend/capture/index.html"
+    },
+    {
+      "source": "/capture/:path*",
+      "destination": "/frontend/capture/:path*"
+    },
+    {
+      "source": "/checkin",
+      "destination": "/frontend/checkin/index.html"
+    },
+    {
+      "source": "/checkin/:path*",
+      "destination": "/frontend/checkin/:path*"
     }
   ],
   "redirects": [
