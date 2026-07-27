@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 logger = logging.getLogger(__name__)
 
+# Ensure data directory exists for file-based SQLite database
+data_dir = Path("./data")
+data_dir.mkdir(parents=True, exist_ok=True)
+
 raw_db_url: str = os.environ.get(
     "DATABASE_URL",
-    "sqlite+aiosqlite:///:memory:",
+    "sqlite+aiosqlite:///./data/app.db",
 )
 
 # Normalize PostgreSQL driver prefixes for async SQLAlchemy
@@ -26,37 +31,30 @@ else:
 engine = create_async_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 async_session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
-fallback_engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
-fallback_factory = async_sessionmaker(fallback_engine, expire_on_commit=False)
-fallback_initialized = False
+_tables_created = False
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """FastAPI dependency that yields an async DB session with resilient fallback."""
-    global fallback_initialized
-    try:
-        async with async_session_factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-    except Exception as e:
-        logger.warning(
-            "Primary database connection failed (%s) – using SQLite fallback session", e
-        )
-        if not fallback_initialized:
-            async with fallback_engine.begin() as conn:
+async def ensure_tables_exist() -> None:
+    """Ensure database tables are auto-created if not already present."""
+    global _tables_created
+    if not _tables_created:
+        try:
+            async with engine.begin() as conn:
                 from api.models.db_models import Base
 
                 await conn.run_sync(Base.metadata.create_all)
-            fallback_initialized = True
+            _tables_created = True
+        except Exception as e:
+            logger.warning("Could not auto-create database tables: %s", e)
 
-        async with fallback_factory() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """FastAPI dependency that yields an async DB session with auto table creation."""
+    await ensure_tables_exist()
+    async with async_session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

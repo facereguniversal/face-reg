@@ -6,8 +6,12 @@ from api.services.face_service import FaceService
 
 
 def get_face_service(request: Request) -> FaceService:
-    """Retrieve the app-scoped FaceService from FastAPI state."""
-    return request.app.state.face_service
+    """Retrieve the app-scoped FaceService from FastAPI state with lazy fallback."""
+    svc = getattr(request.app.state, "face_service", None)
+    if svc is None:
+        svc = FaceService()
+        request.app.state.face_service = svc
+    return svc
 
 
 def get_client_ip(request: Request) -> str:
