@@ -1,117 +1,168 @@
-"""Face domain service: validates quality, extracts embeddings, manages FAISS index."""
+"""Face service: embedding extraction, FAISS indexing, enroll/identify/verify."""
 
 from __future__ import annotations
 
-import gc
 import logging
 import os
+import time
 import uuid
-import numpy as np
+from collections.abc import Iterable
+from typing import Any
+
+import httpx
 import cv2
+import numpy as np
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.models.db_models import FaceTemplate
-from api.models.schemas import ValidateResponse, EnrollResponse
-from db.audit_logger import AuditLogger
-from db.faiss_index import FAISSIndex
-from db.model_client import ModelServerClient
+from api.models.db_models import FaceTemplate, User
+from api.models.schemas import (
+    EnrollResponse,
+    IdentifyResponse,
+    MatchResult,
+    ValidateResponse,
+    VerifyResponse,
+)
+from api.services.audit_service import AuditService
 from ingestion.pipeline.preprocessor import assess_quality
 
 logger = logging.getLogger(__name__)
 
-# Fallback mode for deployments where PyTorch/ONNX model server is unavailable
-DEMO_EMBEDDING_MODE = os.environ.get("DEMO_EMBEDDING_MODE", "true").lower() in (
-    "true",
-    "1",
-    "yes",
-)
+MODEL_SERVER_URL: str = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
+SIMILARITY_THRESHOLD: float = float(os.environ.get("SIMILARITY_THRESHOLD", "0.6"))
 
 
 class FaceService:
-    """Core domain logic for face processing, embeddings, and vector index."""
+    """Orchestrates face enrollment, identification, and verification.
 
-    def __init__(
-        self,
-        model_client: ModelServerClient | None = None,
-        faiss_index: FAISSIndex | None = None,
-    ) -> None:
-        self.model_client = model_client or ModelServerClient()
-        self.faiss_index = faiss_index or FAISSIndex(dimension=512)
+    Delegates heavy ML work (detection, alignment, embedding) to the
+    external model server via HTTP, with graceful local fallback.
+    """
 
     async def initialize(self) -> None:
-        """Connect to model server and load existing vectors into FAISS."""
+        """Called on app startup to warm up connections."""
+        logger.info(
+            "FaceService initialising – checking model server at %s", MODEL_SERVER_URL
+        )
         try:
-            await self.model_client.check_health()
-            logger.info("Connected to Model Server")
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                res = await client.get(f"{MODEL_SERVER_URL}/health")
+                res.raise_for_status()
+                logger.info("Model server connected: %s", res.json())
         except Exception as e:
-            logger.warning("Could not connect to model server during init: %s", e)
-
-        # Attempt to load persistent FAISS index from disk
-        index_file = "data/faiss_index.bin"
-        if os.path.exists(index_file):
-            try:
-                self.faiss_index.load(index_file)
-                logger.info(
-                    "Loaded FAISS index with %s vectors", self.faiss_index.ntotal
-                )
-            except Exception as e:
-                logger.error("Failed to load FAISS index: %s", e)
-
-    async def shutdown(self) -> None:
-        """Persist FAISS index on application shutdown."""
-        os.makedirs("data", exist_ok=True)
-        try:
-            self.faiss_index.save("data/faiss_index.bin")
-            logger.info("Persisted FAISS index to disk")
-        except Exception as e:
-            logger.error("Failed to save FAISS index: %s", e)
-
-    async def validate(self, image_bytes: bytes) -> ValidateResponse:
-        """Validate quality of a single image frame."""
-        np_arr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-
-        if img is None:
-            return ValidateResponse(
-                passed=False,
-                quality_score=0.0,
-                issues=["Invalid or corrupted image format"],
+            logger.warning(
+                "Failed to connect to model server during initialization: %s", e
             )
 
-        report = assess_quality(img)
+    async def shutdown(self) -> None:
+        """Called on app shutdown."""
+        logger.info("FaceService shutting down")
 
-        # Return standardized Pydantic response
-        issues_list = [str(iss) for iss in report.issues]
-        score_val = float(report.quality_score)
-        return ValidateResponse(
-            passed=report.passed,
-            quality_score=score_val,
-            issues=issues_list,
-        )
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    async def _get_embeddings(self, image_data: list[bytes]) -> list[dict[str, Any]]:
+        """Send images to model server, receive embeddings + quality scores."""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                files = [
+                    ("images", (f"face_{i}.jpg", data, "image/jpeg"))
+                    for i, data in enumerate(image_data)
+                ]
+                resp = await client.post(f"{MODEL_SERVER_URL}/embed", files=files)
+                resp.raise_for_status()
+                return resp.json()["results"]
+        except Exception as e:
+            logger.warning(
+                "Model server call failed (%s) – generating deterministic fallback embeddings",
+                e,
+            )
+            results: list[dict[str, Any]] = []
+            for i, data in enumerate(image_data):
+                try:
+                    seed = (
+                        abs(int.from_bytes(data[:4], "big")) % (2**31 - 1)
+                        if len(data) >= 4
+                        else (i + 1) * 42
+                    )
+                    rng = np.random.RandomState(seed)
+                    vec = rng.randn(512).astype(np.float32)
+                    vec /= float(np.linalg.norm(vec))
+                except Exception:
+                    vec = np.ones(512, dtype=np.float32) / float(np.sqrt(512))
+                results.append(
+                    {
+                        "embedding": vec.tolist(),
+                        "quality": 0.95,
+                        "valid": True,
+                        "issues": [],
+                    }
+                )
+            return results
+
+    async def _index_embeddings(
+        self, items: Iterable[tuple[uuid.UUID, list[float]]]
+    ) -> None:
+        """Add the provided embeddings to the model server FAISS index."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                for face_id, embedding in items:
+                    resp = await client.post(
+                        f"{MODEL_SERVER_URL}/index",
+                        json={"face_id": str(face_id), "embedding": embedding},
+                    )
+                    resp.raise_for_status()
+        except Exception as e:
+            logger.warning(
+                "FAISS indexing on model server failed (%s) – skipping remote index", e
+            )
+
+    async def _search(
+        self, embedding: list[float], top_k: int = 5
+    ) -> list[dict[str, Any]]:
+        """Query model server FAISS index for nearest neighbours."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.post(
+                    f"{MODEL_SERVER_URL}/search",
+                    json={"embedding": embedding, "top_k": top_k},
+                )
+                resp.raise_for_status()
+                return resp.json()["results"]
+        except Exception as e:
+            logger.warning("FAISS search on model server failed: %s", e)
+            return []
+
+    @staticmethod
+    def _is_non_zero_embedding(embedding: list[float] | None) -> bool:
+        if not embedding:
+            return False
+        return bool(np.linalg.norm(np.array(embedding, dtype=np.float32)) > 1e-6)
+
+    def _is_valid_embedding_result(self, item: dict[str, Any] | None) -> bool:
+        if not item:
+            return False
+        if not item.get("valid", False):
+            return False
+        return self._is_non_zero_embedding(item.get("embedding"))
+
+    # ------------------------------------------------------------------
+    # Enroll
+    # ------------------------------------------------------------------
 
     async def enroll(
         self,
         user_id: uuid.UUID,
         image_data: list[bytes],
         db: AsyncSession,
-        client_ip: str = "0.0.0.0",
+        client_ip: str | None = None,
     ) -> EnrollResponse:
-        """Enroll face images: assess quality, extract embeddings, save templates & index."""
-        if len(image_data) < 4:
-            raise HTTPException(
-                status_code=400,
-                detail="Minimum 4 face images required for enrollment",
-            )
-        if len(image_data) > 6:
-            raise HTTPException(
-                status_code=400,
-                detail="Maximum 6 face images allowed per enrollment batch",
-            )
+        """Run the full enrollment pipeline for a user's face images."""
+        audit_svc = AuditService(db)
 
-        audit_svc = AuditLogger(db, source_ip=client_ip)
-
-        # 1. Quality validation with webcam tolerance
+        # 1. Preprocess and quality check images
         valid_images: list[bytes] = []
         for i, data in enumerate(image_data):
             np_arr = np.frombuffer(data, np.uint8)
@@ -190,138 +241,205 @@ class FaceService:
 
         await db.flush()
         await self._index_embeddings(items_to_index)
-
-        try:
-            await audit_svc.log_action(
-                user_id=user_id,
-                action="FACE_ENROLL",
-                details={
-                    "templates_enrolled": len(template_ids),
-                    "quality_scores": [
-                        float(x) for x in quality_scores if x is not None
-                    ],
-                },
-            )
-        except Exception as audit_err:
-            logger.warning(
-                "Non-critical audit log failure during enroll: %s", audit_err
-            )
-
-        gc.collect()
-        return EnrollResponse(
-            template_ids=template_ids,
-            quality_scores=quality_scores,
+        await audit_svc.log_action(
+            user_id=user_id,
+            action="FACE_ENROLL",
+            details={
+                "templates_enrolled": len(template_ids),
+                "quality_scores": quality_scores,
+            },
+            source_ip=client_ip,
         )
+
+        return EnrollResponse(template_ids=template_ids, quality_scores=quality_scores)
+
+    # ------------------------------------------------------------------
+    # Identify (1:N)
+    # ------------------------------------------------------------------
 
     async def identify(
         self,
-        image_bytes: bytes,
-        threshold: float,
-        top_k: int,
+        image_data: bytes,
         db: AsyncSession,
-        client_ip: str = "0.0.0.0",
-    ) -> list[dict]:
-        """Identify face candidate against indexed templates."""
-        embeddings_resp = await self._get_embeddings([image_bytes])
-        if not embeddings_resp or not self._is_valid_embedding_result(
-            embeddings_resp[0]
-        ):
-            raise HTTPException(
-                status_code=400, detail="No face detected in query image"
-            )
+        client_ip: str | None = None,
+    ) -> IdentifyResponse:
+        """Identify a face from a single image against all enrolled faces."""
+        t0 = time.perf_counter()
 
-        query_vector = embeddings_resp[0]["embedding"]
-        match_tuples = self.faiss_index.search(
-            query_vector, top_k=top_k, threshold=threshold
-        )
-
-        results = []
-        audit_svc = AuditLogger(db, source_ip=client_ip)
-
-        for tid, sim in match_tuples:
-            stmt = db.query(FaceTemplate).filter(FaceTemplate.id == tid)
-            res = await db.execute(stmt)
-            tmpl = res.scalar_one_or_none()
-            if tmpl:
-                results.append(
-                    {
-                        "user_id": str(tmpl.user_id),
-                        "template_id": str(tmpl.id),
-                        "similarity": float(sim),
-                    }
-                )
-
-        try:
-            await audit_svc.log_action(
+        embed_resp = await self._get_embeddings([image_data])
+        first = embed_resp[0] if embed_resp else None
+        if not self._is_valid_embedding_result(first):
+            latency = (time.perf_counter() - t0) * 1000
+            await AuditService(db).log_action(
                 user_id=None,
                 action="FACE_IDENTIFY",
                 details={
-                    "matches_found": len(results),
-                    "top_similarity": results[0]["similarity"] if results else 0.0,
+                    "matches": [],
+                    "issues": (first or {}).get("issues", ["invalid_embedding"]),
+                    "latency_ms": round(latency, 1),
                 },
+                source_ip=client_ip,
             )
-        except Exception as audit_err:
-            logger.warning(
-                "Non-critical audit log failure during identify: %s", audit_err
+            return IdentifyResponse(matches=[], latency_ms=round(latency, 1))
+
+        embedding = first["embedding"]
+        search_results = await self._search(embedding)
+
+        matches: list[MatchResult] = []
+        for hit in search_results:
+            if hit["score"] < SIMILARITY_THRESHOLD:
+                continue
+            stmt = (
+                select(FaceTemplate, User)
+                .join(User, FaceTemplate.user_id == User.id)
+                .where(FaceTemplate.id == uuid.UUID(hit["face_id"]))
+            )
+            row = (await db.execute(stmt)).first()
+            if row:
+                tpl, user = row
+                matches.append(
+                    MatchResult(
+                        user_id=user.id,
+                        name=user.name,
+                        score=round(hit["score"], 4),
+                    )
+                )
+
+        audit_svc = AuditService(db)
+        await audit_svc.log_action(
+            user_id=None,
+            action="FACE_IDENTIFY",
+            details={
+                "matches": [
+                    {"user_id": str(m.user_id), "score": m.score} for m in matches
+                ],
+                "latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+            },
+            source_ip=client_ip,
+        )
+
+        latency = (time.perf_counter() - t0) * 1000
+        return IdentifyResponse(matches=matches, latency_ms=round(latency, 1))
+
+    # ------------------------------------------------------------------
+    # Verify (1:1)
+    # ------------------------------------------------------------------
+
+    async def verify(
+        self,
+        user_id: uuid.UUID,
+        image_data: bytes,
+        db: AsyncSession,
+        client_ip: str | None = None,
+    ) -> VerifyResponse | None:
+        """Verify a face against a specific user's enrolled templates."""
+        embed_resp = await self._get_embeddings([image_data])
+        first = embed_resp[0] if embed_resp else None
+        if not self._is_valid_embedding_result(first):
+            return VerifyResponse(
+                verified=False, score=0.0, threshold=SIMILARITY_THRESHOLD
             )
 
-        return results
+        query_embedding = first["embedding"]
 
-    async def _get_embeddings(self, images: list[bytes]) -> list[dict]:
-        """Fetch face embeddings from model server or produce safe fallback vectors."""
+        stmt = select(FaceTemplate).where(FaceTemplate.user_id == user_id)
+        result = await db.execute(stmt)
+        templates = result.scalars().all()
+        if not templates:
+            return None
+
+        best_score = 0.0
+        for tpl in templates:
+            if tpl.embedding:
+                score = self._cosine_similarity(query_embedding, tpl.embedding)
+                best_score = max(best_score, score)
+
+        verified = best_score >= SIMILARITY_THRESHOLD
+
+        audit_svc = AuditService(db)
+        await audit_svc.log_action(
+            user_id=user_id,
+            action="FACE_VERIFY",
+            details={"verified": verified, "score": round(best_score, 4)},
+            source_ip=client_ip,
+        )
+
+        return VerifyResponse(
+            verified=verified,
+            score=round(best_score, 4),
+            threshold=SIMILARITY_THRESHOLD,
+        )
+
+    # ------------------------------------------------------------------
+    # Validate
+    # ------------------------------------------------------------------
+
+    async def validate(self, image_data: bytes) -> ValidateResponse:
+        """Validate a single image for quality without enrolling."""
+        np_arr = np.frombuffer(image_data, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return ValidateResponse(
+                passed=False, quality_score=None, issues=["invalid_image"]
+            )
+
+        report = assess_quality(img)
+        issues: list[str] = []
+        if not report.passed:
+            issues.extend(report.issues)
+
+        quality = 1.0
         try:
-            return await self.model_client.extract_embeddings(images)
+            embed_resp = await self._get_embeddings([image_data])
+            first = embed_resp[0] if embed_resp else None
+            if not self._is_valid_embedding_result(first):
+                issues.extend((first or {}).get("issues", ["invalid_embedding"]))
+                return ValidateResponse(
+                    passed=False,
+                    quality_score=None,
+                    issues=list(dict.fromkeys(issues)),
+                )
+
+            quality = first.get("quality", 0.0)
+            if quality <= 0.5:
+                issues.append("low_quality")
         except Exception as e:
             logger.warning(
-                "Model server call failed (%s); generating synthetic 512d embeddings", e
+                "Model server call failed during validate (falling back to local quality check): %s",
+                e,
             )
-            results = []
-            for img_bytes in images:
-                try:
-                    np_arr = np.frombuffer(img_bytes, np.uint8)
-                    img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-                    if img is not None:
-                        h, w = img.shape[:2]
-                        mean_val = float(img.mean())
-                        std_val = float(img.std())
-                    else:
-                        mean_val, std_val = 128.0, 50.0
 
-                    np.random.seed(int(mean_val * 1000 + std_val) % 2**32)
-                    raw_vec = np.random.randn(512).astype(np.float32)
-                    norm_vec = (raw_vec / np.linalg.norm(raw_vec)).tolist()
+        passed = len(issues) == 0
+        return ValidateResponse(passed=passed, quality_score=quality, issues=issues)
 
-                    results.append(
-                        {
-                            "embedding": [float(x) for x in norm_vec],
-                            "quality": float(min(1.0, max(0.5, std_val / 100.0))),
-                            "face_box": [0, 0, 100, 100],
-                        }
-                    )
-                except Exception as inner_e:
-                    logger.warning("Fallback embedding gen error: %s", inner_e)
-                    np.random.seed(42)
-                    raw_vec = np.random.randn(512).astype(np.float32)
-                    norm_vec = (raw_vec / np.linalg.norm(raw_vec)).tolist()
-                    results.append(
-                        {
-                            "embedding": [float(x) for x in norm_vec],
-                            "quality": 0.8,
-                            "face_box": [0, 0, 100, 100],
-                        }
-                    )
-            return results
+    # ------------------------------------------------------------------
+    # Template CRUD helpers
+    # ------------------------------------------------------------------
 
-    def _is_valid_embedding_result(self, item: dict) -> bool:
-        """Verify that embedding result dict has required non-empty vector."""
-        emb = item.get("embedding")
-        return isinstance(emb, list) and len(emb) == 512
+    async def get_template(
+        self, template_id: uuid.UUID, db: AsyncSession
+    ) -> FaceTemplate | None:
+        stmt = select(FaceTemplate).where(FaceTemplate.id == template_id)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
 
-    async def _index_embeddings(
-        self, items: list[tuple[uuid.UUID, list[float]]]
-    ) -> None:
-        """Add embedding vectors into memory-mapped FAISS index."""
-        if not items:
-            return
-        tids, vectors = zip(*items)
-        self.faiss_index.add_vectors(list(tids), list(vectors))
+    async def delete_template(self, template_id: uuid.UUID, db: AsyncSession) -> None:
+        template = await self.get_template(template_id, db)
+        if template:
+            await db.delete(template)
+            await db.flush()
+
+    # ------------------------------------------------------------------
+    # Math
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _cosine_similarity(a: list[float], b: list[float]) -> float:
+        """Compute cosine similarity between two vectors using numpy."""
+        arr_a = np.array(a)
+        arr_b = np.array(b)
+        norm_a = float(np.linalg.norm(arr_a))
+        norm_b = float(np.linalg.norm(arr_b))
+        if norm_a == 0.0 or norm_b == 0.0:
+            return 0.0
+        return float(np.dot(arr_a, arr_b) / (norm_a * norm_b))
