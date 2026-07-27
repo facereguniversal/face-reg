@@ -209,8 +209,16 @@ class FaceService:
             template = FaceTemplate(
                 id=tid,
                 user_id=user_id,
-                embedding=item["embedding"],
-                quality_score=item.get("quality"),
+                embedding=(
+                    [float(x) for x in item["embedding"]]
+                    if item.get("embedding")
+                    else None
+                ),
+                quality_score=(
+                    float(item.get("quality", 0.0))
+                    if item.get("quality") is not None
+                    else None
+                ),
             )
             db.add(template)
             template_ids.append(tid)
