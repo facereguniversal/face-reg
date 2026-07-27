@@ -339,19 +339,26 @@ class FaceService:
             issues.extend(report.issues)
 
         # 2. Model server check (face presence)
-        embed_resp = await self._get_embeddings([image_data])
-        first = embed_resp[0] if embed_resp else None
-        if not self._is_valid_embedding_result(first):
-            issues.extend((first or {}).get("issues", ["invalid_embedding"]))
-            return ValidateResponse(
-                passed=False,
-                quality_score=None,
-                issues=list(dict.fromkeys(issues)),
-            )
+        quality = 1.0
+        try:
+            embed_resp = await self._get_embeddings([image_data])
+            first = embed_resp[0] if embed_resp else None
+            if not self._is_valid_embedding_result(first):
+                issues.extend((first or {}).get("issues", ["invalid_embedding"]))
+                return ValidateResponse(
+                    passed=False,
+                    quality_score=None,
+                    issues=list(dict.fromkeys(issues)),
+                )
 
-        quality = first.get("quality", 0.0)
-        if quality <= 0.5:
-            issues.append("low_quality")
+            quality = first.get("quality", 0.0)
+            if quality <= 0.5:
+                issues.append("low_quality")
+        except Exception as e:
+            logger.warning(
+                "Model server call failed during validate (falling back to local quality check): %s",
+                e,
+            )
 
         passed = len(issues) == 0
         return ValidateResponse(passed=passed, quality_score=quality, issues=issues)
