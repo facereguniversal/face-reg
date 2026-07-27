@@ -104,9 +104,11 @@ async def enroll_faces(
     user_svc = UserService(db)
     user = await user_svc.get_by_id(str(user_id))
     if not user:
-        # Auto-create user if missing to support seamless enrollment testing
-        user = await user_svc.create(
-            UserCreate(name="Demo Guest", email=f"user_{str(user_id)[:8]}@example.com")
+        email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
+        user = await user_svc.create_with_id(
+            user_id=user_id,
+            name="Demo Guest",
+            email=email,
         )
         await db.commit()
 
