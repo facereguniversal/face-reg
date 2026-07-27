@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 import uuid
 from typing import Any
 
+import cv2
+import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -115,16 +118,27 @@ async def enroll_faces(
             )
             await db.commit()
 
-        # Read image bytes
+        # Read, downscale to max 480px, and compress images to protect RAM
         image_data: list[bytes] = []
-        for img in images:
-            data = await img.read()
-            image_data.append(data)
+        for img_file in images:
+            raw_data = await img_file.read()
+            np_arr = np.frombuffer(raw_data, np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if img is not None:
+                h, w = img.shape[:2]
+                if max(h, w) > 480:
+                    scale = 480.0 / max(h, w)
+                    img = cv2.resize(img, (int(w * scale), int(h * scale)))
+                _, reencoded = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                image_data.append(reencoded.tobytes())
+            else:
+                image_data.append(raw_data)
 
         # Delegate to face service (detection → alignment → embedding → store)
         result = await face_svc.enroll(
             user_id=user.id, image_data=image_data, db=db, client_ip=client_ip
         )
+        gc.collect()
         return result
     except HTTPException:
         raise
