@@ -1,4 +1,7 @@
-const API_BASE = "/api";
+const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
+    ? "http://localhost:8000/api" 
+    : "https://face-reg-production.up.railway.app/api";
+
 const MIN_FRAMES = 4;
 const MAX_FRAMES = 6;
 const USER_ID = "00000000-0000-0000-0000-000000000000";
@@ -219,7 +222,7 @@ if (submitBtn) {
 
             if (response.ok) {
                 const data = await response.json();
-                alert(`Success! Enrolled templates: ${data.template_ids.length}`);
+                alert(`Success! Enrolled templates: ${data.template_ids ? data.template_ids.length : 'ok'}`);
                 window.location.reload();
             } else {
                 const text = await response.text();
