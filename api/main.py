@@ -52,6 +52,7 @@ app = FastAPI(
         "identification, and verification."
     ),
     version="0.1.0",
+    debug=True,
     lifespan=lifespan,
 )
 
