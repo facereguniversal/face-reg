@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:match*",
-      "destination": "https://face-reg-production.up.railway.app/api/:match*"
+      "destination": "https://face-reg.up.railway.app/api/:match*"
     }
   ],
   "redirects": [
