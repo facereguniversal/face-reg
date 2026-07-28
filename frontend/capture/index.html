@@ -11,8 +11,8 @@
 <body>
   <div class="container">
     <header>
-      <h1>Face Recognition</h1>
-      <p>Secure Biometric Enrollment</p>
+      <h1>School Attendance System</h1>
+      <p>Student Biometric Registration</p>
     </header>
     
     <main class="capture-container">
@@ -23,7 +23,7 @@
       
       <div id="feedback-panel" class="hidden">
         <span id="feedback-icon"></span>
-        <span id="feedback-text">Position your face inside the frame</span>
+        <span id="feedback-text">Position student face inside the frame</span>
       </div>
 
       <div class="controls">
@@ -32,9 +32,21 @@
     </main>
 
     <aside class="gallery-container">
+      <div class="student-info-form">
+        <h3>Student Information</h3>
+        <div class="form-group">
+          <label for="student-name">Full Name</label>
+          <input type="text" id="student-name" placeholder="e.g. Alex Smith" value="Alex Smith" required />
+        </div>
+        <div class="form-group">
+          <label for="student-class">Class / Grade</label>
+          <input type="text" id="student-class" placeholder="e.g. Grade 10-A" value="Grade 10-A" required />
+        </div>
+      </div>
+
       <h2>Captured Frames (<span id="frame-count">0</span>/6)</h2>
       <div id="gallery"></div>
-      <button id="submit-btn" disabled>Complete Enrollment</button>
+      <button id="submit-btn" disabled>Complete Registration</button>
     </aside>
   </div>
 

@@ -197,16 +197,25 @@ if (submitBtn) {
     submitBtn.addEventListener('click', async () => {
         if (capturedFrames.length < MIN_FRAMES) return;
 
+        const nameInput = document.getElementById('student-name');
+        const classInput = document.getElementById('student-class');
+        const studentName = nameInput ? nameInput.value.trim() : "Demo Student";
+        const studentClass = classInput ? classInput.value.trim() : "Grade 10-A";
+
         submitBtn.disabled = true;
-        submitBtn.textContent = "Enrolling...";
+        submitBtn.textContent = "Registering Student...";
 
         try {
             const formData = new FormData();
+            formData.append("name", studentName);
+            formData.append("student_class", studentClass);
             capturedFrames.forEach((blob, index) => {
                 formData.append("images", blob, `frame_${index + 1}.jpg`);
             });
 
-            const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
+            const targetUrl = `${API_BASE}/users/${USER_ID}/faces?name=${encodeURIComponent(studentName)}&student_class=${encodeURIComponent(studentClass)}`;
+
+            const response = await fetch(targetUrl, {
                 method: 'POST',
                 headers: getHeaders(),
                 body: formData
@@ -214,7 +223,7 @@ if (submitBtn) {
 
             if (response.ok) {
                 const data = await response.json();
-                alert(`Success! Enrolled templates: ${data.template_ids ? data.template_ids.length : 'ok'}`);
+                alert(`Success! Registered ${studentName} (${studentClass}) with ${data.template_ids ? data.template_ids.length : 'all'} face templates.`);
                 window.location.reload();
             } else {
                 const text = await response.text();
@@ -225,14 +234,14 @@ if (submitBtn) {
                 } catch (_) {
                     errMsg = text || response.statusText;
                 }
-                alert("Enrollment failed: " + errMsg);
+                alert("Registration failed: " + errMsg);
             }
         } catch (e) {
-            alert("Enrollment error: " + e.message);
+            alert("Registration error: " + e.message);
             console.error(e);
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = "Complete Enrollment";
+            submitBtn.textContent = "Complete Registration";
         }
     });
 }
