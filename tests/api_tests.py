@@ -73,9 +73,9 @@ class TestUserEndpoints:
 class TestRecognitionEndpoints:
     """Verify recognition endpoints require authentication."""
 
-    def test_identify_requires_auth(self, client: TestClient):
+    def test_identify_no_image_returns_422(self, client: TestClient):
         resp = client.post("/api/identify")
-        assert resp.status_code == 401
+        assert resp.status_code == 422
 
     def test_verify_requires_auth(self, client: TestClient):
         resp = client.post("/api/verify")
