@@ -1,86 +1,114 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#c94f70">
-  <title>Student Check-In · Little Boy's Academy</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23fff8f3'/%3E%3Cpath d='M32 36c-14-7-13-19-5-20 4-1 6 2 5 7 0-5 2-8 6-7 8 1 9 13-6 20z' fill='%23df7894'/%3E%3Ccircle cx='32' cy='31' r='4' fill='%23f4c34e'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/checkin/style.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-</head>
-<body>
-  <div class="petal-field" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#c94f70">
+    <title>Student Check-In | Little Boy's Academy</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23fff8f3'/%3E%3Cpath d='M32 36c-14-7-13-19-5-20 4-1 6 2 5 7 0-5 2-8 6-7 8 1 9 13-6 20z' fill='%23df7894'/%3E%3Ccircle cx='32' cy='31' r='4' fill='%23f4c34e'/%3E%3C/svg%3E"
+    >
+    <link rel="stylesheet" href="/checkin/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&amp;family=Nunito:wght@400;600;700;800&amp;display=swap"
+      rel="stylesheet"
+    >
+  </head>
+  <body>
+    <div class="petal-field" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i><i></i>
+    </div>
 
-  <main class="kiosk-container">
-    <header class="header">
-      <a class="home-link" href="/" aria-label="Back to academy home">← <span>Home</span></a>
-      <div class="brand">
-        <span class="brand-mark">✿</span>
-        <div>
-          <h1>Little Boy's Academy</h1>
-          <p>Morning check-in garden</p>
-        </div>
-      </div>
-      <div class="live-badge"><span></span> Ready</div>
-    </header>
-
-    <section class="checkin-layout">
-      <div class="scanner-column">
-        <div class="scanner-label"><span>1</span> Step into the frame</div>
-        <div class="scanner-interface">
-          <video id="webcam" autoplay playsinline aria-label="Student check-in camera"></video>
-          <div class="camera-placeholder" aria-hidden="true"><span>☺</span><small>Camera garden</small></div>
-          <div class="scanner-overlay" id="scanner-overlay">
-            <div class="face-frame"><i></i><i></i><i></i><i></i></div>
-            <div class="scan-line"></div>
+    <main class="kiosk-container">
+      <header class="header">
+        <a class="home-link" href="/" aria-label="Back to academy home"
+          ><span>Home</span></a
+        >
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"><i></i></span>
+          <div>
+            <h1>Little Boy's Academy</h1>
+            <p>Student check-in</p>
           </div>
-          <div class="camera-flower flower-one">✿</div>
-          <div class="camera-flower flower-two">✿</div>
         </div>
-        <div class="status-panel" id="status-panel" aria-live="polite">
-          <span class="status-spark">✦</span>
-          <span id="status-text">Looking for your smile...</span>
-        </div>
-      </div>
+        <div class="live-badge"><span></span> Ready</div>
+      </header>
 
-      <aside class="welcome-panel">
-        <p class="eyebrow">Good morning!</p>
-        <h2>Look this way<br>and <em>smile.</em></h2>
-        <p>Stand comfortably in the oval and hold still for a tiny moment. We'll have you on your way to class in no time.</p>
-        <div class="tip-card">
-          <span>☀</span>
-          <div><strong>Little tip</strong><small>Make sure your face is bright and easy to see.</small></div>
+      <section class="checkin-layout">
+        <div class="scanner-column">
+          <div class="scanner-label"><span>1</span> Step into the frame</div>
+          <div class="scanner-interface">
+          <video id="webcam" playsinline></video>
+            <div class="camera-placeholder" aria-hidden="true">
+              <span>CAM</span><small>Camera preview</small>
+            </div>
+            <div class="scanner-overlay" id="scanner-overlay">
+              <div class="face-frame"><i></i><i></i><i></i><i></i></div>
+              <div class="scan-line"></div>
+            </div>
+            <div class="camera-flower flower-one"></div>
+            <div class="camera-flower flower-two"></div>
+          </div>
+          <div class="status-panel" id="status-panel" aria-live="polite">
+            <span class="status-spark"></span>
+            <span id="status-text">Position your face in the frame</span>
+          </div>
         </div>
-        <div class="progress-dots" aria-label="Check-in step one of two">
-          <b></b><i></i><span>Smile</span><em></em><b></b><span>Welcome</span>
+
+        <aside class="welcome-panel">
+          <p class="eyebrow">Student check-in</p>
+          <h2>Look directly<br>at the <em>camera.</em></h2>
+          <p>
+            Center your face in the oval and hold still while attendance is
+            confirmed.
+          </p>
+          <div class="tip-card">
+            <span>TIP</span>
+            <div>
+              <strong>Use even lighting</strong
+              ><small
+                >Keep your full face visible and remove any obstruction.</small
+              >
+            </div>
+          </div>
+        <div
+          class="progress-dots"
+          role="group"
+          aria-label="Check-in step one of two"
+        >
+            <b></b><i></i><span>Position</span><em></em><b></b
+            ><span>Confirmed</span>
+          </div>
+        </aside>
+      </section>
+
+      <section
+        class="success-card hidden"
+        id="success-card"
+        aria-live="assertive"
+      >
+        <div class="check-icon">OK</div>
+        <div class="success-copy">
+          <p>Attendance confirmed</p>
+          <h2>Welcome, <span id="student-name">Student</span>!</h2>
+          <div class="student-meta">
+            <span>Class: <strong id="student-class">Unassigned</strong></span>
+            <span>Time: <strong id="checkin-time"></strong></span>
+          </div>
+          <small>Check-in is complete. You may proceed to class.</small>
         </div>
-      </aside>
-    </section>
+      </section>
 
-    <section class="success-card hidden" id="success-card" aria-live="assertive">
-      <div class="success-confetti" aria-hidden="true">✿ <i>★</i> ✦ <b>✿</b></div>
-      <div class="check-icon">✓</div>
-      <div class="success-copy">
-        <p>Checked in with a smile</p>
-        <h2>Welcome, <span id="student-name">Student</span>!</h2>
-        <div class="student-meta">
-          <span>📚 <strong id="student-class">Class</strong></span>
-          <span>🕘 <strong id="checkin-time"></strong></span>
-        </div>
-        <small>You're all set. Have a blooming brilliant day!</small>
-      </div>
-    </section>
+      <footer>
+        <span>Secure attendance</span>
+        <span>Little Boy's Academy</span>
+        <span>Student check-in</span>
+      </footer>
+    </main>
 
-    <footer>
-      <span>🌸 Kind hearts</span>
-      <span>Curious minds</span>
-      <span>Bright beginnings ☀️</span>
-    </footer>
-  </main>
-
-  <script src="/checkin/app.js"></script>
-</body>
+    <script src="/checkin/app.js"></script>
+  </body>
 </html>

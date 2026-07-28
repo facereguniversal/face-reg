@@ -1,7 +1,7 @@
 const IS_LOCAL = ["localhost", "127.0.0.1"].includes(window.location.hostname);
 const API_BASE = IS_LOCAL
-    ? "http://localhost:8000/api"
-    : "https://face-reg-production.up.railway.app/api";
+  ? "http://localhost:8000/api"
+  : "https://face-reg-production.up.railway.app/api";
 
 const MIN_FRAMES = 4;
 const MAX_FRAMES = 6;
@@ -9,251 +9,280 @@ const USER_ID = "00000000-0000-0000-0000-000000000000";
 
 // Handle optional token parameter from URL
 const urlParams = new URLSearchParams(window.location.search);
-const TOKEN = urlParams.get('token') || '';
+const TOKEN = urlParams.get("token") || "";
 
 function getHeaders() {
-    const headers = {};
-    if (TOKEN) {
-        headers['Authorization'] = `Bearer ${TOKEN}`;
-    }
-    return headers;
+  const headers = {};
+  if (TOKEN) {
+    headers["Authorization"] = `Bearer ${TOKEN}`;
+  }
+  return headers;
 }
 
-const video = document.getElementById('webcam');
-const canvas = document.createElement('canvas');
-const feedbackText = document.getElementById('feedback-text') || document.getElementById('feedbackText');
-const feedbackPanel = document.getElementById('feedback-panel') || document.getElementById('feedbackPanel');
-const guide = document.getElementById('face-guide') || document.getElementById('guide');
-const captureBtn = document.getElementById('capture-btn') || document.getElementById('captureBtn');
-const submitBtn = document.getElementById('submit-btn') || document.getElementById('submitBtn');
-const gallery = document.getElementById('gallery');
-const frameCountEl = document.getElementById('frame-count') || document.getElementById('frameCount');
+const video = document.getElementById("webcam");
+const canvas = document.createElement("canvas");
+const feedbackText =
+  document.getElementById("feedback-text") ||
+  document.getElementById("feedbackText");
+const feedbackPanel =
+  document.getElementById("feedback-panel") ||
+  document.getElementById("feedbackPanel");
+const guide =
+  document.getElementById("face-guide") || document.getElementById("guide");
+const captureBtn =
+  document.getElementById("capture-btn") ||
+  document.getElementById("captureBtn");
+const submitBtn =
+  document.getElementById("submit-btn") || document.getElementById("submitBtn");
+const gallery = document.getElementById("gallery");
+const frameCountEl =
+  document.getElementById("frame-count") ||
+  document.getElementById("frameCount");
 
 let capturedFrames = []; // Array of Blobs
 let isProcessing = false;
 
 // Initialize Webcam
 async function setupWebcam() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
-        });
-        video.srcObject = stream;
-        video.onloadedmetadata = () => {
-            video.play();
-            if (captureBtn) captureBtn.disabled = false;
-            startValidationLoop();
-        };
-    } catch (err) {
-        setFeedback("Please allow camera access to capture a smile", "error");
-        console.error(err);
-    }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: "user",
+      },
+    });
+    video.srcObject = stream;
+    video.onloadedmetadata = () => {
+      video.play();
+      if (captureBtn) captureBtn.disabled = false;
+      startValidationLoop();
+    };
+  } catch (err) {
+    setFeedback("Please allow camera access to capture a photo", "error");
+    console.error(err);
+  }
 }
 
 // Continuous Quality Validation (Debounced)
 function startValidationLoop() {
-    setInterval(() => {
-        if (!isProcessing && capturedFrames.length < MAX_FRAMES) {
-            validateCurrentFrame();
-        }
-    }, 1500);
+  setInterval(() => {
+    if (!isProcessing && capturedFrames.length < MAX_FRAMES) {
+      validateCurrentFrame();
+    }
+  }, 1500);
 }
 
 // Capture current frame from webcam as lightweight 480px JPEG
 function getFrameBlob() {
-    return new Promise(resolve => {
-        const targetWidth = 480;
-        const aspectRatio = (video && video.videoWidth) ? (video.videoHeight / video.videoWidth) : 0.75;
-        canvas.width = targetWidth;
-        canvas.height = Math.round(targetWidth * aspectRatio);
-        const ctx = canvas.getContext('2d');
-        if (video) {
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        }
-        canvas.toBlob(resolve, 'image/jpeg', 0.75);
-    });
+  return new Promise((resolve) => {
+    const targetWidth = 480;
+    const aspectRatio =
+      video && video.videoWidth ? video.videoHeight / video.videoWidth : 0.75;
+    canvas.width = targetWidth;
+    canvas.height = Math.round(targetWidth * aspectRatio);
+    const ctx = canvas.getContext("2d");
+    if (video) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+    canvas.toBlob(resolve, "image/jpeg", 0.75);
+  });
 }
 
 // Validate single frame with API
 async function validateCurrentFrame() {
-    isProcessing = true;
-    try {
-        const blob = await getFrameBlob();
-        const formData = new FormData();
-        formData.append("image", blob, "validate.jpg");
+  isProcessing = true;
+  try {
+    const blob = await getFrameBlob();
+    const formData = new FormData();
+    formData.append("image", blob, "validate.jpg");
 
-        const response = await fetch(`${API_BASE}/faces/validate`, {
-            method: 'POST',
-            body: formData,
-            headers: getHeaders(),
-        });
+    const response = await fetch(`${API_BASE}/faces/validate`, {
+      method: "POST",
+      body: formData,
+      headers: getHeaders(),
+    });
 
-        if (!response.ok) throw new Error(`Validation API error (${response.status})`);
-        
-        const result = await response.json();
-        
-        if (result && result.passed) {
-            setFeedback("Lovely and clear — ready to capture!", "success");
-        } else {
-            const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Validation error");
-            setFeedback("Almost there: " + issuesText, "error");
-        }
-    } catch (e) {
-        console.error(e);
-        setFeedback("Reconnecting to the academy service...", "error");
-    } finally {
-        isProcessing = false;
+    if (!response.ok)
+      throw new Error(`Validation API error (${response.status})`);
+
+    const result = await response.json();
+
+    if (result && result.passed) {
+      setFeedback("Image quality is sufficient", "success");
+    } else {
+      const issuesText =
+        result && Array.isArray(result.issues)
+          ? result.issues.join(", ")
+          : result && result.detail
+            ? result.detail
+            : "Validation error";
+      setFeedback("Almost there: " + issuesText, "error");
     }
+  } catch (e) {
+    console.error(e);
+    setFeedback("Reconnecting to the academy service...", "error");
+  } finally {
+    isProcessing = false;
+  }
 }
 
 // UI Feedback
 function setFeedback(msg, type) {
-    if (feedbackText) feedbackText.textContent = msg;
-    if (feedbackPanel) feedbackPanel.className = type;
-    if (guide) guide.className = type === "success" ? "good" : (type === "error" ? "bad" : "");
+  if (feedbackText) feedbackText.textContent = msg;
+  if (feedbackPanel) feedbackPanel.className = type;
+  if (guide)
+    guide.className =
+      type === "success" ? "good" : type === "error" ? "bad" : "";
 }
 
 // Capture button click
 if (captureBtn) {
-    captureBtn.addEventListener('click', async () => {
-        if (capturedFrames.length >= MAX_FRAMES) return;
+  captureBtn.addEventListener("click", async () => {
+    if (capturedFrames.length >= MAX_FRAMES) return;
 
-        captureBtn.disabled = true;
-        captureBtn.textContent = "Checking your smile...";
+    captureBtn.disabled = true;
+    captureBtn.textContent = "Checking image quality...";
 
-        const blob = await getFrameBlob();
-        
-        // Quick validation before adding to gallery
-        const formData = new FormData();
-        formData.append("image", blob, `frame_${Date.now()}.jpg`);
+    const blob = await getFrameBlob();
 
-        try {
-            const response = await fetch(`${API_BASE}/faces/validate`, {
-                method: 'POST',
-                body: formData,
-                headers: getHeaders()
-            });
-            
-            if (response.ok) {
-                const result = await response.json();
-                if (result && result.passed) {
-                    addFrameToGallery(blob);
-                } else {
-                    const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Quality check failed");
-                    alert("Captured frame failed quality check: " + issuesText);
-                }
-            } else {
-                addFrameToGallery(blob);
-            }
-        } catch (e) {
-            console.error("Capture validation failed", e);
-            // Fallback: still add if API is unreachable for validation
-            addFrameToGallery(blob); 
+    // Quick validation before adding to gallery
+    const formData = new FormData();
+    formData.append("image", blob, `frame_${Date.now()}.jpg`);
+
+    try {
+      const response = await fetch(`${API_BASE}/faces/validate`, {
+        method: "POST",
+        body: formData,
+        headers: getHeaders(),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result && result.passed) {
+          addFrameToGallery(blob);
+        } else {
+          const issuesText =
+            result && Array.isArray(result.issues)
+              ? result.issues.join(", ")
+              : result && result.detail
+                ? result.detail
+                : "Quality check failed";
+          alert("Captured frame failed quality check: " + issuesText);
         }
+      } else {
+        addFrameToGallery(blob);
+      }
+    } catch (e) {
+      console.error("Capture validation failed", e);
+      // Fallback: still add if API is unreachable for validation
+      addFrameToGallery(blob);
+    }
 
-        captureBtn.innerHTML = '<span class="button-camera">●</span> Capture a smile';
-        captureBtn.disabled = capturedFrames.length >= MAX_FRAMES;
-    });
+    captureBtn.innerHTML = '<span class="button-camera"></span> Capture photo';
+    captureBtn.disabled = capturedFrames.length >= MAX_FRAMES;
+  });
 }
 
 // Gallery Management
 function addFrameToGallery(blob) {
-    capturedFrames.push(blob);
-    renderGallery();
+  capturedFrames.push(blob);
+  renderGallery();
 }
 
 function removeFrame(index) {
-    capturedFrames.splice(index, 1);
-    renderGallery();
-    if (captureBtn) captureBtn.disabled = false;
+  capturedFrames.splice(index, 1);
+  renderGallery();
+  if (captureBtn) captureBtn.disabled = false;
 }
 
 function renderGallery() {
-    if (gallery) gallery.innerHTML = '';
-    if (frameCountEl) frameCountEl.textContent = capturedFrames.length;
+  if (gallery) gallery.innerHTML = "";
+  if (frameCountEl) frameCountEl.textContent = capturedFrames.length;
 
-    if (gallery && capturedFrames.length === 0) {
-        gallery.innerHTML = `
+  if (gallery && capturedFrames.length === 0) {
+    gallery.innerHTML = `
             <div class="empty-gallery">
-                <span>📷</span>
-                <strong>No smiles captured yet</strong>
-                <small>Add at least four lovely, clear photos.</small>
+                <span>0</span>
+                <strong>No photos captured</strong>
+                <small>Add at least four clear photos.</small>
             </div>
         `;
-    }
+  }
 
-    capturedFrames.forEach((blob, idx) => {
-        const item = document.createElement('div');
-        item.className = 'gallery-item';
-        
-        const img = document.createElement('img');
-        img.src = URL.createObjectURL(blob);
-        
-        const btn = document.createElement('button');
-        btn.className = 'remove-btn';
-        btn.innerHTML = '×';
-        btn.onclick = () => removeFrame(idx);
-        
-        item.appendChild(img);
-        item.appendChild(btn);
-        if (gallery) gallery.appendChild(item);
-    });
+  capturedFrames.forEach((blob, idx) => {
+    const item = document.createElement("div");
+    item.className = "gallery-item";
 
-    if (submitBtn) submitBtn.disabled = capturedFrames.length < MIN_FRAMES;
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(blob);
+
+    const btn = document.createElement("button");
+    btn.className = "remove-btn";
+    btn.textContent = "X";
+    btn.onclick = () => removeFrame(idx);
+
+    item.appendChild(img);
+    item.appendChild(btn);
+    if (gallery) gallery.appendChild(item);
+  });
+
+  if (submitBtn) submitBtn.disabled = capturedFrames.length < MIN_FRAMES;
 }
 
 // Complete Enrollment
 if (submitBtn) {
-    submitBtn.addEventListener('click', async () => {
-        if (capturedFrames.length < MIN_FRAMES) return;
+  submitBtn.addEventListener("click", async () => {
+    if (capturedFrames.length < MIN_FRAMES) return;
 
-        const nameInput = document.getElementById('student-name');
-        const classInput = document.getElementById('student-class');
-        const studentName = nameInput ? nameInput.value.trim() : "Demo Student";
-        const studentClass = classInput ? classInput.value.trim() : "Grade 3 · Sakura";
+    const nameInput = document.getElementById("student-name");
+    const classInput = document.getElementById("student-class");
+    const studentName = nameInput ? nameInput.value.trim() : "Demo Student";
+    const studentClass = classInput
+      ? classInput.value.trim()
+      : "Grade 3, Sakura";
 
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Planting their profile...";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Registering student...";
 
+    try {
+      const formData = new FormData();
+      formData.append("name", studentName);
+      formData.append("student_class", studentClass);
+      capturedFrames.forEach((blob, index) => {
+        formData.append("images", blob, `frame_${index + 1}.jpg`);
+      });
+
+      const targetUrl = `${API_BASE}/users/${USER_ID}/faces?name=${encodeURIComponent(studentName)}&student_class=${encodeURIComponent(studentClass)}`;
+
+      const response = await fetch(targetUrl, {
+        method: "POST",
+        headers: getHeaders(),
+        body: formData,
+      });
+
+      if (response.ok) {
+        alert(`Registration complete for ${studentName}.`);
+        window.location.reload();
+      } else {
+        const text = await response.text();
+        let errMsg = "Unknown error";
         try {
-            const formData = new FormData();
-            formData.append("name", studentName);
-            formData.append("student_class", studentClass);
-            capturedFrames.forEach((blob, index) => {
-                formData.append("images", blob, `frame_${index + 1}.jpg`);
-            });
-
-            const targetUrl = `${API_BASE}/users/${USER_ID}/faces?name=${encodeURIComponent(studentName)}&student_class=${encodeURIComponent(studentClass)}`;
-
-            const response = await fetch(targetUrl, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: formData
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                alert(`Welcome to Little Boy's Academy, ${studentName}! Registration is complete.`);
-                window.location.reload();
-            } else {
-                const text = await response.text();
-                let errMsg = "Unknown error";
-                try {
-                    const err = JSON.parse(text);
-                    errMsg = err.detail || text;
-                } catch (_) {
-                    errMsg = text || response.statusText;
-                }
-                alert("Registration failed: " + errMsg);
-            }
-        } catch (e) {
-            alert("Registration error: " + e.message);
-            console.error(e);
-        } finally {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = "<span>✓</span> Complete registration";
+          const err = JSON.parse(text);
+          errMsg = err.detail || text;
+        } catch {
+          errMsg = text || response.statusText;
         }
-    });
+        alert("Registration failed: " + errMsg);
+      }
+    } catch (e) {
+      alert("Registration error: " + e.message);
+      console.error(e);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Complete registration";
+    }
+  });
 }
 
 // Start app

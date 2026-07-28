@@ -1,118 +1,163 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#c94f70">
-  <meta name="description" content="Register a student at Little Boy's Academy.">
-  <title>Student Registration · Little Boy's Academy</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23fff8f3'/%3E%3Cpath d='M32 36c-14-7-13-19-5-20 4-1 6 2 5 7 0-5 2-8 6-7 8 1 9 13-6 20z' fill='%23df7894'/%3E%3Ccircle cx='32' cy='31' r='4' fill='%23f4c34e'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="/capture/style.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-</head>
-<body>
-  <div class="petal-field" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#c94f70">
+    <meta
+      name="description"
+      content="Register a student at Little Boy's Academy."
+    >
+    <title>Student Registration | Little Boy's Academy</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%23fff8f3'/%3E%3Cpath d='M32 36c-14-7-13-19-5-20 4-1 6 2 5 7 0-5 2-8 6-7 8 1 9 13-6 20z' fill='%23df7894'/%3E%3Ccircle cx='32' cy='31' r='4' fill='%23f4c34e'/%3E%3C/svg%3E"
+    >
+    <link rel="stylesheet" href="/capture/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&amp;family=Nunito:wght@400;600;700;800&amp;display=swap"
+      rel="stylesheet"
+    >
+  </head>
+  <body>
+    <div class="petal-field" aria-hidden="true">
+      <i></i><i></i><i></i><i></i><i></i>
+    </div>
 
-  <div class="page-shell">
-    <nav class="topbar">
-      <a class="brand" href="/">
-        <span class="brand-mark">✿</span>
-        <span><strong>Little Boy's Academy</strong><small>Growing bright minds</small></span>
-      </a>
-      <a class="checkin-link" href="/checkin/"><span>✓</span> Go to check-in</a>
-    </nav>
+    <div class="page-shell">
+      <nav class="topbar">
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true"><i></i></span>
+          <span
+            ><strong>Little Boy's Academy</strong
+            ><small>Student registration</small></span
+          >
+        </a>
+        <a class="checkin-link" href="/checkin/">Go to check-in</a>
+      </nav>
 
-    <header class="page-heading">
-      <div>
-        <p class="eyebrow">Student enrollment</p>
-        <h1>Add a new <em>little learner.</em></h1>
-        <p>Help us recognize each bright face with a few clear, cheerful snapshots.</p>
-      </div>
-      <div class="step-track" aria-label="Registration steps">
-        <div class="active"><b>1</b><span>Details</span></div>
-        <i></i>
-        <div class="active"><b>2</b><span>Photos</span></div>
-        <i></i>
-        <div><b>3</b><span>All set</span></div>
-      </div>
-    </header>
+      <header class="page-heading">
+        <div>
+          <p class="eyebrow">Student enrollment</p>
+          <h1>Register a new <em>student.</em></h1>
+          <p>Create a student profile with four to six clear photos.</p>
+        </div>
+      <div class="step-track" role="group" aria-label="Registration steps">
+          <div class="active"><b>1</b><span>Details</span></div>
+          <i></i>
+          <div class="active"><b>2</b><span>Photos</span></div>
+          <i></i>
+          <div><b>3</b><span>Complete</span></div>
+        </div>
+      </header>
 
-    <main class="container">
-      <section class="capture-container">
-        <div class="section-heading">
-          <div>
-            <span class="section-number">01</span>
-            <h2>Say cheese!</h2>
+      <main class="container">
+        <section class="capture-container">
+          <div class="section-heading">
+            <div>
+              <span class="section-number">01</span>
+              <h2>Capture photos</h2>
+            </div>
+            <span class="secure-note">Secure capture</span>
           </div>
-          <span class="secure-note">🛡 Secure capture</span>
-        </div>
 
-        <div id="video-wrapper">
-          <video id="webcam" autoplay playsinline aria-label="Student enrollment camera"></video>
-          <div class="camera-placeholder" aria-hidden="true"><span>☺</span><small>Your camera will bloom here</small></div>
-          <div id="face-guide"><i></i><i></i><i></i><i></i></div>
-          <span class="corner-flower one">✿</span>
-          <span class="corner-flower two">✿</span>
-        </div>
+          <div id="video-wrapper">
+          <video id="webcam" playsinline></video>
+            <div class="camera-placeholder" aria-hidden="true">
+              <span>CAM</span><small>Camera preview</small>
+            </div>
+            <div id="face-guide"><i></i><i></i><i></i><i></i></div>
+            <span class="corner-flower one"></span>
+            <span class="corner-flower two"></span>
+          </div>
 
-        <div id="feedback-panel">
-          <span id="feedback-icon">✦</span>
-          <span id="feedback-text">Position the student's face inside the oval</span>
-        </div>
+          <div id="feedback-panel">
+            <span id="feedback-icon"></span>
+            <span id="feedback-text"
+              >Position the student's face inside the oval</span
+            >
+          </div>
 
-        <button id="capture-btn" disabled>
-          <span class="button-camera">●</span>
-          Capture a smile
+        <button id="capture-btn" type="button" disabled>
+            <span class="button-camera"></span>
+            Capture photo
+          </button>
+
+          <div class="photo-tips">
+            <span>Use even lighting</span>
+            <span>Look forward</span>
+            <span>Keep still</span>
+          </div>
+        </section>
+
+        <aside class="gallery-container">
+          <div class="student-info-form">
+            <div class="section-heading compact">
+              <div>
+                <span class="section-number">02</span>
+                <h2>Student details</h2>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="student-name">Student's full name</label>
+              <div class="input-wrap">
+            <input
+              type="text"
+                  id="student-name"
+                  placeholder="e.g. Alex Smith"
+                  value=""
+                  autocomplete="name"
+              required
+            >
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="student-class">Class or grade</label>
+              <div class="input-wrap">
+            <input
+                  type="text"
+                  id="student-class"
+                  placeholder="e.g. Grade 3, Sakura"
+                  value=""
+              required
+            >
+              </div>
+            </div>
+          </div>
+
+          <div class="gallery-heading">
+            <div>
+              <span class="section-number">03</span>
+              <h2>Captured photos</h2>
+            </div>
+            <span class="frame-pill"><b id="frame-count">0</b>/6</span>
+          </div>
+
+          <div id="gallery" aria-live="polite">
+            <div class="empty-gallery">
+              <span>0</span>
+              <strong>No photos captured</strong>
+              <small>Add at least four clear photos.</small>
+            </div>
+          </div>
+
+          <div class="minimum-note">
+            Four photos are needed to finish enrollment.
+          </div>
+        <button id="submit-btn" type="button" disabled>
+          Complete registration
         </button>
+        </aside>
+      </main>
 
-        <div class="photo-tips">
-          <span>☀️ Face the light</span>
-          <span>👀 Look forward</span>
-          <span>🌸 Keep still</span>
-        </div>
-      </section>
+      <footer>
+        <span>Little Boy's Academy</span><b></b
+        ><span>Student attendance system</span>
+      </footer>
+    </div>
 
-      <aside class="gallery-container">
-        <div class="student-info-form">
-          <div class="section-heading compact">
-            <div><span class="section-number">02</span><h2>Student details</h2></div>
-          </div>
-          <div class="form-group">
-            <label for="student-name">Student's full name</label>
-            <div class="input-wrap"><span>☺</span><input type="text" id="student-name" placeholder="e.g. Alex Smith" value="" autocomplete="name" required></div>
-          </div>
-          <div class="form-group">
-            <label for="student-class">Class or grade</label>
-            <div class="input-wrap"><span>✎</span><input type="text" id="student-class" placeholder="e.g. Grade 3 · Sakura" value="" required></div>
-          </div>
-        </div>
-
-        <div class="gallery-heading">
-          <div>
-            <span class="section-number">03</span>
-            <h2>Smile collection</h2>
-          </div>
-          <span class="frame-pill"><b id="frame-count">0</b>/6</span>
-        </div>
-
-        <div id="gallery" aria-live="polite">
-          <div class="empty-gallery">
-            <span>📷</span>
-            <strong>No smiles captured yet</strong>
-            <small>Add at least four lovely, clear photos.</small>
-          </div>
-        </div>
-
-        <div class="minimum-note"><span>✿</span> Four photos are needed to finish enrollment.</div>
-        <button id="submit-btn" disabled><span>✓</span> Complete registration</button>
-      </aside>
-    </main>
-
-    <footer><span>Little Boy's Academy</span><b>✿</b><span>Every child deserves to bloom</span></footer>
-  </div>
-
-  <script src="/capture/app.js?v=20260728-2"></script>
-</body>
+    <script src="/capture/app.js?v=20260728-2"></script>
+  </body>
 </html>
