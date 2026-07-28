@@ -17,16 +17,22 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy API Service
-        run: railway up --service api --detach
+        run: railway up --service api
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        continue-on-error: true
 
       - name: Deploy Model Server
-        run: railway up --service model_server --detach
+        run: railway up --service model_server
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        continue-on-error: true
+
+      - name: Verify Backend Routes
+        run: |
+          curl --fail --retry 12 --retry-delay 5 \
+            https://face-reg-production.up.railway.app/api/health
+          curl --fail --retry 12 --retry-delay 5 \
+            https://face-reg-production.up.railway.app/openapi.json \
+            | grep -q '"/api/faces/enroll"'
 
   deploy-frontend-vercel:
     name: Deploy Frontend (Vercel)
@@ -35,12 +41,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
       - name: Deploy to Vercel
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'
-          working-directory: ./
-        continue-on-error: true
+        run: vercel deploy --prod --yes --token "$VERCEL_TOKEN"
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Verify Frontend Deployment
+        run: |
+          curl --fail --retry 12 --retry-delay 5 \
+            https://face-reg-nu.vercel.app/capture/app.js \
+            | grep -q '/users/${USER_ID}/faces'

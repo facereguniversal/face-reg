@@ -6,11 +6,11 @@ import base64
 import gc
 import logging
 import uuid
+
 import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
 from api.models.schemas import ValidateResponse
 from api.services.database import async_session_factory, ensure_tables_exist
@@ -20,11 +20,6 @@ from api.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-
-class EnrollJsonRequest(BaseModel):
-    user_id: uuid.UUID
-    images: list[str]  # List of base64 data URLs or raw base64 strings
 
 
 @router.post("/validate", response_model=ValidateResponse)
@@ -37,13 +32,19 @@ async def validate_face(
     return await face_svc.validate(data)
 
 
-@router.post("/enroll_demo")
+@router.post("/enroll", status_code=201)
+@router.post("/enroll_demo", status_code=201, include_in_schema=False)
+@router.post("/enroll_json", status_code=201, include_in_schema=False)
 async def enroll_demo(
     request: Request,
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
-    """Robust demo enrollment endpoint."""
+    """Enroll the demo user from four to six base64 or multipart images.
+
+    ``/enroll_demo`` and ``/enroll_json`` are retained as compatibility aliases
+    so previously cached frontend bundles keep working after an API deployment.
+    """
     try:
         await ensure_tables_exist()
         async with async_session_factory() as db:

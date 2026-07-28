@@ -24,6 +24,23 @@ class TestHealthEndpoint:
         assert data["health"] == "/api/health"
 
 
+class TestEnrollmentRoutes:
+    """Keep the enrollment API contract stable for current and cached clients."""
+
+    def test_canonical_and_compatibility_routes_accept_post(self, client: TestClient):
+        expected_paths = {
+            "/api/faces/enroll",
+            "/api/faces/enroll_demo",
+            "/api/faces/enroll_json",
+        }
+        post_paths = {
+            route.path
+            for route in client.app.routes
+            if "POST" in getattr(route, "methods", set())
+        }
+        assert expected_paths <= post_paths
+
+
 class TestAuthEndpoints:
     """Verify auth endpoints exist and reject bad input."""
 

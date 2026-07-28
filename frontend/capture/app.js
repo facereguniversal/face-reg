@@ -1,5 +1,6 @@
-const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
-    ? "http://localhost:8000/api" 
+const IS_LOCAL = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const API_BASE = IS_LOCAL
+    ? "http://localhost:8000/api"
     : "https://face-reg-production.up.railway.app/api";
 
 const MIN_FRAMES = 4;
@@ -200,24 +201,15 @@ if (submitBtn) {
         submitBtn.textContent = "Enrolling...";
 
         try {
-            // Convert Blobs to Base64 data URLs
-            const base64Images = await Promise.all(
-                capturedFrames.map(blob => new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(blob);
-                }))
-            );
+            const formData = new FormData();
+            capturedFrames.forEach((blob, index) => {
+                formData.append("images", blob, `frame_${index + 1}.jpg`);
+            });
 
-            const response = await fetch(`${API_BASE}/enroll_demo`, {
+            const response = await fetch(`${API_BASE}/users/${USER_ID}/faces`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...getHeaders()
-                },
-                body: JSON.stringify({
-                    images: base64Images
-                })
+                headers: getHeaders(),
+                body: formData
             });
 
             if (response.ok) {
