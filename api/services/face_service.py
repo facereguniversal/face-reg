@@ -153,7 +153,12 @@ class FaceService:
                     resp.raise_for_status()
                     return resp.json()["results"]
             except Exception as e:
-                logger.warning("FAISS search call to %s failed: %s", base_url, e)
+                logger.warning(
+                    "FAISS search call to %s failed (%s): %s",
+                    base_url,
+                    type(e).__name__,
+                    e or repr(e),
+                )
         return []
 
     @staticmethod
@@ -305,6 +310,22 @@ class FaceService:
 
         embedding = first["embedding"]
         search_results = await self._search(embedding)
+
+        if not search_results:
+            stmt_all = select(FaceTemplate)
+            all_templates = (await db.execute(stmt_all)).scalars().all()
+            valid_items = [
+                (tpl.id, tpl.embedding)
+                for tpl in all_templates
+                if tpl.embedding and self._is_non_zero_embedding(tpl.embedding)
+            ]
+            if valid_items:
+                logger.info(
+                    "Synchronizing %d face templates from DB to FAISS...",
+                    len(valid_items),
+                )
+                await self._index_embeddings(valid_items)
+                search_results = await self._search(embedding)
 
         matches: list[MatchResult] = []
         for hit in search_results:
