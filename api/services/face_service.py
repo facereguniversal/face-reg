@@ -407,7 +407,7 @@ class FaceService:
                 )
 
             quality = first.get("quality", 0.0)
-            if quality <= 0.5:
+            if quality <= 0.1:
                 issues.append("low_quality")
         except Exception as e:
             logger.warning(

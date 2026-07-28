@@ -192,9 +192,9 @@ class IndexRequest(BaseModel):
 def _compute_quality(aligned: np.ndarray) -> float:
     """Simple quality score based on Laplacian variance (sharpness)."""
     gray = cv2.cvtColor(aligned, cv2.COLOR_BGR2GRAY)
-    variance = cv2.Laplacian(gray, cv2.CV_64F).var()
-    # Normalise to 0–1 range (empirical: 0–500 → 0–1)
-    return float(min(variance / 500.0, 1.0))
+    variance = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    # Normalise to 0–1 range (112x112 face crop: variance 30+ is crisp)
+    return float(min(max(variance / 50.0, 0.25), 1.0))
 
 
 # ---------------------------------------------------------------------------
