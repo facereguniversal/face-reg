@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hotel Kiosk - Check In</title>
+    <title>Oakridge Academy - Student Check-In</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%231b4f91'/%3E%3Ccircle cx='32' cy='25' r='11' fill='white'/%3E%3Cpath d='M14 55c3-12 10-18 18-18s15 6 18 18' fill='white'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="/checkin/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
@@ -11,8 +11,8 @@
 <body>
     <div class="kiosk-container">
         <div class="header">
-            <h1>Lumiere Hotels</h1>
-            <p>Seamless Check-in</p>
+            <h1>Oakridge Academy</h1>
+            <p>Student Check-In Kiosk</p>
         </div>
         
         <div class="scanner-interface">
@@ -22,15 +22,16 @@
             </div>
             
             <div class="status-panel" id="status-panel">
-                <span id="status-text">Looking for Guest...</span>
+                <span id="status-text">Scanning for Student...</span>
             </div>
         </div>
 
         <div class="success-card hidden" id="success-card">
             <div class="check-icon">✓</div>
-            <h2>Welcome Back!</h2>
-            <p>Identity Verified: <span id="guest-id"></span></p>
-            <p class="subtitle">Generating your room key...</p>
+            <h2>Welcome to School, <span id="student-name">Student</span>! 👋</h2>
+            <p class="student-detail">Class: <strong id="student-class">Grade 10-A</strong></p>
+            <p class="checkin-time">Time: <span id="checkin-time"></span></p>
+            <p class="subtitle">Attendance verified. Have a fantastic day!</p>
         </div>
     </div>
     

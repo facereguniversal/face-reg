@@ -69,7 +69,7 @@ function startScanning() {
     
     scannerInterface.classList.remove('success');
     scannerOverlay.style.display = 'block';
-    statusText.textContent = "Looking for Guest...";
+    statusText.textContent = "Scanning for Student...";
     
     scanInterval = setInterval(scanFrame, 2000); // Check every 2 seconds
 }
@@ -96,11 +96,11 @@ async function scanFrame() {
             console.log("[Checkin] Result:", JSON.stringify(result));
             if (result.matches && result.matches.length > 0) {
                 const match = result.matches[0];
-                console.log("[Checkin] Best match:", match.name, "score:", match.score);
+                console.log("[Checkin] Best match:", match.name, "class:", match.student_class, "score:", match.score);
                 if (match.score > 0.4) {
-                    handleSuccess(match.user_id);
+                    handleSuccess(match);
                 } else {
-                    statusText.textContent = `Score too low: ${match.score.toFixed(2)}`;
+                    statusText.textContent = `Score low: ${match.score.toFixed(2)}`;
                 }
             } else {
                 console.log("[Checkin] No matches found");
@@ -116,13 +116,19 @@ async function scanFrame() {
     }
 }
 
-function handleSuccess(userId) {
+function handleSuccess(match) {
     isIdentified = true;
     clearInterval(scanInterval);
     
-    statusText.textContent = "Identity Confirmed";
-    // For privacy in actual kiosk, we might mask UUID, but we display it here to prove MVP works
-    guestIdSpan.textContent = userId;
+    statusText.textContent = "Student Recognized";
+    
+    const nameEl = document.getElementById('student-name');
+    const classEl = document.getElementById('student-class');
+    const timeEl = document.getElementById('checkin-time');
+    
+    if (nameEl) nameEl.textContent = match.name || "Student";
+    if (classEl) classEl.textContent = match.student_class || "Class Unassigned";
+    if (timeEl) timeEl.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     
     scannerOverlay.style.display = 'none';
     scannerInterface.classList.add('success');
@@ -133,7 +139,7 @@ function handleSuccess(userId) {
         successCard.classList.add('visible');
     }, 50);
 
-    // After 6 seconds, reset back to scanning mode for next guest
+    // After 6 seconds, reset back to scanning mode for next student
     setTimeout(() => {
         startScanning();
     }, 6000);
