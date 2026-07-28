@@ -60,8 +60,13 @@ function getFrameBlob() {
   });
 }
 
+let isScanningFrame = false;
+
 function startScanning() {
   isIdentified = false;
+  isScanningFrame = false;
+  if (scanInterval) clearInterval(scanInterval);
+
   successCard.classList.remove("visible");
   setTimeout(() => {
     successCard.classList.add("hidden");
@@ -74,11 +79,12 @@ function startScanning() {
   scannerOverlay.style.display = "block";
   statusText.textContent = "Position your face in the frame";
 
-  scanInterval = setInterval(scanFrame, 2000); // Check every 2 seconds
+  scanInterval = setInterval(scanFrame, 2500); // Check every 2.5 seconds
 }
 
 async function scanFrame() {
-  if (isIdentified) return;
+  if (isIdentified || isScanningFrame) return;
+  isScanningFrame = true;
 
   try {
     const blob = await getFrameBlob();
@@ -124,6 +130,8 @@ async function scanFrame() {
   } catch (e) {
     console.error("[Checkin] Request failed:", e);
     statusText.textContent = "Reconnecting to check-in service...";
+  } finally {
+    isScanningFrame = false;
   }
 }
 
