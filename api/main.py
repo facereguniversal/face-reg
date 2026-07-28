@@ -144,9 +144,14 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         import os
         import httpx
 
-        base_url = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001").rstrip(
-            "/"
+        raw_url = (
+            os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
+            .strip()
+            .rstrip("/")
         )
+        if not raw_url.startswith(("http://", "https://")):
+            raw_url = f"https://{raw_url}"
+        base_url = raw_url
         urls_to_try = [base_url]
         if ":8001" in base_url:
             urls_to_try.append(base_url.replace(":8001", ""))

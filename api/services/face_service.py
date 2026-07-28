@@ -65,7 +65,14 @@ class FaceService:
 
     @staticmethod
     def _get_urls_to_try() -> list[str]:
-        base = MODEL_SERVER_URL.rstrip("/")
+        raw = (
+            os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
+            .strip()
+            .rstrip("/")
+        )
+        if not raw.startswith(("http://", "https://")):
+            raw = f"https://{raw}"
+        base = raw
         urls = [base]
         if ":8001" in base:
             urls.append(base.replace(":8001", ""))
