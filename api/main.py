@@ -144,16 +144,29 @@ async def health_check(db: AsyncSession = Depends(get_db)):
         import os
         import httpx
 
-        model_server_url = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001")
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            res = await client.get(f"{model_server_url}/health")
-            if res.status_code == 200:
-                health["model_server"] = "ok"
-                data = res.json()
-                health["model_mode"] = data.get("mode", "unknown")
-            else:
-                health["model_server"] = "down"
-                health["status"] = "degraded"
+        base_url = os.environ.get("MODEL_SERVER_URL", "http://localhost:8001").rstrip(
+            "/"
+        )
+        urls_to_try = [base_url]
+        if ":8001" in base_url:
+            urls_to_try.append(base_url.replace(":8001", ""))
+        elif "railway.internal" in base_url and ":" not in base_url.split("//")[-1]:
+            urls_to_try.append(f"{base_url}:8001")
+
+        for url in list(dict.fromkeys(urls_to_try)):
+            try:
+                async with httpx.AsyncClient(timeout=2.0) as client:
+                    res = await client.get(f"{url}/health")
+                    if res.status_code == 200:
+                        health["model_server"] = "ok"
+                        data = res.json()
+                        health["model_mode"] = data.get("mode", "unknown")
+                        break
+            except Exception:
+                continue
+        if health["model_server"] == "unknown":
+            health["model_server"] = "down"
+            health["status"] = "degraded"
     except Exception:
         health["model_server"] = "down"
         health["status"] = "degraded"

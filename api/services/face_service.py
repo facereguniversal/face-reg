@@ -63,77 +63,91 @@ class FaceService:
     # Internal helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _get_urls_to_try() -> list[str]:
+        base = MODEL_SERVER_URL.rstrip("/")
+        urls = [base]
+        if ":8001" in base:
+            urls.append(base.replace(":8001", ""))
+        elif "railway.internal" in base and ":" not in base.split("//")[-1]:
+            urls.append(f"{base}:8001")
+        return list(dict.fromkeys(urls))
+
     async def _get_embeddings(self, image_data: list[bytes]) -> list[dict[str, Any]]:
         """Send images to model server, receive embeddings + quality scores."""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                files = [
-                    ("images", (f"face_{i}.jpg", data, "image/jpeg"))
-                    for i, data in enumerate(image_data)
-                ]
-                resp = await client.post(f"{MODEL_SERVER_URL}/embed", files=files)
-                resp.raise_for_status()
-                return resp.json()["results"]
-        except Exception as e:
-            logger.warning(
-                "Model server call failed (%s) – generating deterministic fallback embeddings",
-                e,
-            )
-            results: list[dict[str, Any]] = []
-            for i, data in enumerate(image_data):
-                try:
-                    seed = (
-                        abs(int.from_bytes(data[:4], "big")) % (2**31 - 1)
-                        if len(data) >= 4
-                        else (i + 1) * 42
-                    )
-                    rng = np.random.RandomState(seed)
-                    vec = rng.randn(512).astype(np.float32)
-                    vec /= float(np.linalg.norm(vec))
-                except Exception:
-                    vec = np.ones(512, dtype=np.float32) / float(np.sqrt(512))
-                results.append(
-                    {
-                        "embedding": vec.tolist(),
-                        "quality": 0.95,
-                        "valid": True,
-                        "issues": [],
-                    }
+        for base_url in self._get_urls_to_try():
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    files = [
+                        ("images", (f"face_{i}.jpg", data, "image/jpeg"))
+                        for i, data in enumerate(image_data)
+                    ]
+                    resp = await client.post(f"{base_url}/embed", files=files)
+                    resp.raise_for_status()
+                    return resp.json()["results"]
+            except Exception as e:
+                logger.warning("Model server /embed call to %s failed: %s", base_url, e)
+
+        logger.warning(
+            "All model server endpoints failed – generating deterministic fallback embeddings"
+        )
+        results: list[dict[str, Any]] = []
+        for i, data in enumerate(image_data):
+            try:
+                seed = (
+                    abs(int.from_bytes(data[:4], "big")) % (2**31 - 1)
+                    if len(data) >= 4
+                    else (i + 1) * 42
                 )
-            return results
+                rng = np.random.RandomState(seed)
+                vec = rng.randn(512).astype(np.float32)
+                vec /= float(np.linalg.norm(vec))
+            except Exception:
+                vec = np.ones(512, dtype=np.float32) / float(np.sqrt(512))
+            results.append(
+                {
+                    "embedding": vec.tolist(),
+                    "quality": 0.95,
+                    "valid": True,
+                    "issues": [],
+                }
+            )
+        return results
 
     async def _index_embeddings(
         self, items: Iterable[tuple[uuid.UUID, list[float]]]
     ) -> None:
         """Add the provided embeddings to the model server FAISS index."""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                for face_id, embedding in items:
-                    resp = await client.post(
-                        f"{MODEL_SERVER_URL}/index",
-                        json={"face_id": str(face_id), "embedding": embedding},
-                    )
-                    resp.raise_for_status()
-        except Exception as e:
-            logger.warning(
-                "FAISS indexing on model server failed (%s) – skipping remote index", e
-            )
+        items_list = list(items)
+        for base_url in self._get_urls_to_try():
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    for face_id, embedding in items_list:
+                        resp = await client.post(
+                            f"{base_url}/index",
+                            json={"face_id": str(face_id), "embedding": embedding},
+                        )
+                        resp.raise_for_status()
+                    return
+            except Exception as e:
+                logger.warning("FAISS indexing call to %s failed: %s", base_url, e)
 
     async def _search(
         self, embedding: list[float], top_k: int = 5
     ) -> list[dict[str, Any]]:
         """Query model server FAISS index for nearest neighbours."""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                resp = await client.post(
-                    f"{MODEL_SERVER_URL}/search",
-                    json={"embedding": embedding, "top_k": top_k},
-                )
-                resp.raise_for_status()
-                return resp.json()["results"]
-        except Exception as e:
-            logger.warning("FAISS search on model server failed: %s", e)
-            return []
+        for base_url in self._get_urls_to_try():
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    resp = await client.post(
+                        f"{base_url}/search",
+                        json={"embedding": embedding, "top_k": top_k},
+                    )
+                    resp.raise_for_status()
+                    return resp.json()["results"]
+            except Exception as e:
+                logger.warning("FAISS search call to %s failed: %s", base_url, e)
+        return []
 
     @staticmethod
     def _is_non_zero_embedding(embedding: list[float] | None) -> bool:
