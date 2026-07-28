@@ -17,7 +17,11 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy Backend Service
-        run: railway up --service face-reg
+        run: |
+          if ! railway up --service face-reg; then
+            railway logs --service face-reg --latest --deployment --lines 200 || true
+            exit 1
+          fi
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
