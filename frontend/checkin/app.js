@@ -82,26 +82,37 @@ async function scanFrame() {
         const formData = new FormData();
         formData.append("image", blob, `scan_${Date.now()}.jpg`);
 
+        console.log("[Checkin] Calling identify API:", `${API_BASE}/identify`);
         const response = await fetch(`${API_BASE}/identify`, {
             method: 'POST',
             body: formData,
             headers: getHeaders()
         });
 
+        console.log("[Checkin] Response status:", response.status);
+
         if (response.ok) {
             const result = await response.json();
+            console.log("[Checkin] Result:", JSON.stringify(result));
             if (result.matches && result.matches.length > 0) {
-                // Determine if confident enough (0.4 cosine sim is often acceptable for ArcFace but config dependent)
                 const match = result.matches[0];
+                console.log("[Checkin] Best match:", match.name, "score:", match.score);
                 if (match.score > 0.4) {
                     handleSuccess(match.user_id);
+                } else {
+                    statusText.textContent = `Score too low: ${match.score.toFixed(2)}`;
                 }
+            } else {
+                console.log("[Checkin] No matches found");
             }
         } else {
-            console.warn("Identify endpoint returned:", response.status);
+            const errText = await response.text();
+            console.warn("[Checkin] Identify error:", response.status, errText);
+            statusText.textContent = `API Error: ${response.status}`;
         }
     } catch (e) {
-        console.error("Scanning request failed. Backend offline?", e);
+        console.error("[Checkin] Request failed:", e);
+        statusText.textContent = "Backend offline";
     }
 }
 
