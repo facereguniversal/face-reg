@@ -128,7 +128,6 @@ async def enroll_demo(
 async def identify(
     image: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    _caller: dict[str, Any] = Depends(get_current_user),
     face_svc: FaceService = Depends(get_face_service),
     client_ip: str = Depends(get_client_ip),
 ):
