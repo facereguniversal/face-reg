@@ -41,7 +41,7 @@ async function startWebcam() {
             startScanning();
         });
     } catch (err) {
-        statusText.textContent = "Camera Initialization Error";
+        statusText.textContent = "We couldn't open the camera";
         console.error("Camera Error:", err);
     }
 }
@@ -69,7 +69,7 @@ function startScanning() {
     
     scannerInterface.classList.remove('success');
     scannerOverlay.style.display = 'block';
-    statusText.textContent = "Scanning for Student...";
+    statusText.textContent = "Looking for your smile...";
     
     scanInterval = setInterval(scanFrame, 2000); // Check every 2 seconds
 }
@@ -100,7 +100,7 @@ async function scanFrame() {
                 if (match.score > 0.4) {
                     handleSuccess(match);
                 } else {
-                    statusText.textContent = `Score low: ${match.score.toFixed(2)}`;
+                    statusText.textContent = "Come a little closer and try again";
                 }
             } else {
                 console.log("[Checkin] No matches found");
@@ -108,11 +108,11 @@ async function scanFrame() {
         } else {
             const errText = await response.text();
             console.warn("[Checkin] Identify error:", response.status, errText);
-            statusText.textContent = `API Error: ${response.status}`;
+            statusText.textContent = "The check-in garden needs a moment";
         }
     } catch (e) {
         console.error("[Checkin] Request failed:", e);
-        statusText.textContent = "Backend offline";
+        statusText.textContent = "Reconnecting to the academy...";
     }
 }
 
@@ -120,7 +120,7 @@ function handleSuccess(match) {
     isIdentified = true;
     clearInterval(scanInterval);
     
-    statusText.textContent = "Student Recognized";
+    statusText.textContent = "We found you — welcome!";
     
     const nameEl = document.getElementById('student-name');
     const classEl = document.getElementById('student-class');

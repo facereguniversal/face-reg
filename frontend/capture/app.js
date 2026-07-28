@@ -45,7 +45,7 @@ async function setupWebcam() {
             startValidationLoop();
         };
     } catch (err) {
-        setFeedback("Camera access denied or unavailable", "error");
+        setFeedback("Please allow camera access to capture a smile", "error");
         console.error(err);
     }
 }
@@ -93,14 +93,14 @@ async function validateCurrentFrame() {
         const result = await response.json();
         
         if (result && result.passed) {
-            setFeedback(`Good quality (Score: ${Math.round(result.quality_score || 0)})`, "success");
+            setFeedback("Lovely and clear — ready to capture!", "success");
         } else {
             const issuesText = (result && Array.isArray(result.issues)) ? result.issues.join(", ") : ((result && result.detail) ? result.detail : "Validation error");
-            setFeedback("Issues: " + issuesText, "error");
+            setFeedback("Almost there: " + issuesText, "error");
         }
     } catch (e) {
         console.error(e);
-        setFeedback("Backend service connecting... (" + e.message + ")", "error");
+        setFeedback("Reconnecting to the academy service...", "error");
     } finally {
         isProcessing = false;
     }
@@ -119,7 +119,7 @@ if (captureBtn) {
         if (capturedFrames.length >= MAX_FRAMES) return;
 
         captureBtn.disabled = true;
-        captureBtn.textContent = "Processing...";
+        captureBtn.textContent = "Checking your smile...";
 
         const blob = await getFrameBlob();
         
@@ -151,7 +151,7 @@ if (captureBtn) {
             addFrameToGallery(blob); 
         }
 
-        captureBtn.textContent = "Capture Frame";
+        captureBtn.innerHTML = '<span class="button-camera">●</span> Capture a smile';
         captureBtn.disabled = capturedFrames.length >= MAX_FRAMES;
     });
 }
@@ -171,6 +171,16 @@ function removeFrame(index) {
 function renderGallery() {
     if (gallery) gallery.innerHTML = '';
     if (frameCountEl) frameCountEl.textContent = capturedFrames.length;
+
+    if (gallery && capturedFrames.length === 0) {
+        gallery.innerHTML = `
+            <div class="empty-gallery">
+                <span>📷</span>
+                <strong>No smiles captured yet</strong>
+                <small>Add at least four lovely, clear photos.</small>
+            </div>
+        `;
+    }
 
     capturedFrames.forEach((blob, idx) => {
         const item = document.createElement('div');
@@ -200,10 +210,10 @@ if (submitBtn) {
         const nameInput = document.getElementById('student-name');
         const classInput = document.getElementById('student-class');
         const studentName = nameInput ? nameInput.value.trim() : "Demo Student";
-        const studentClass = classInput ? classInput.value.trim() : "Grade 10-A";
+        const studentClass = classInput ? classInput.value.trim() : "Grade 3 · Sakura";
 
         submitBtn.disabled = true;
-        submitBtn.textContent = "Registering Student...";
+        submitBtn.textContent = "Planting their profile...";
 
         try {
             const formData = new FormData();
@@ -223,7 +233,7 @@ if (submitBtn) {
 
             if (response.ok) {
                 const data = await response.json();
-                alert(`Success! Registered ${studentName} (${studentClass}) with ${data.template_ids ? data.template_ids.length : 'all'} face templates.`);
+                alert(`Welcome to Little Boy's Academy, ${studentName}! Registration is complete.`);
                 window.location.reload();
             } else {
                 const text = await response.text();
@@ -241,7 +251,7 @@ if (submitBtn) {
             console.error(e);
         } finally {
             submitBtn.disabled = false;
-            submitBtn.textContent = "Complete Registration";
+            submitBtn.innerHTML = "<span>✓</span> Complete registration";
         }
     });
 }
