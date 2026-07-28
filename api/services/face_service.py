@@ -84,7 +84,7 @@ class FaceService:
         """Send images to model server, receive embeddings + quality scores."""
         for base_url in self._get_urls_to_try():
             try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
+                async with httpx.AsyncClient(timeout=20.0) as client:
                     files = [
                         ("images", (f"face_{i}.jpg", data, "image/jpeg"))
                         for i, data in enumerate(image_data)
@@ -128,7 +128,7 @@ class FaceService:
         items_list = list(items)
         for base_url in self._get_urls_to_try():
             try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     for face_id, embedding in items_list:
                         resp = await client.post(
                             f"{base_url}/index",
@@ -145,7 +145,7 @@ class FaceService:
         """Query model server FAISS index for nearest neighbours."""
         for base_url in self._get_urls_to_try():
             try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
                         f"{base_url}/search",
                         json={"embedding": embedding, "top_k": top_k},
