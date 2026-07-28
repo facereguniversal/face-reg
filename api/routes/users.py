@@ -10,7 +10,15 @@ from typing import Any
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, Depends, File, HTTPException, status, UploadFile, Request
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -109,12 +117,12 @@ async def enroll_faces(
         await ensure_tables_exist()
         async with async_session_factory() as db:
             user_svc = UserService(db)
-            
+
             # Extract student details from query params, json, or form
             req_params = request.query_params
             st_name = req_params.get("name") or req_params.get("student_name")
             st_class = req_params.get("student_class") or req_params.get("class")
-            
+
             content_type = request.headers.get("content-type", "").lower()
             body_json = {}
             if "application/json" in content_type:
@@ -123,7 +131,9 @@ async def enroll_faces(
                     if not st_name:
                         st_name = body_json.get("name") or body_json.get("student_name")
                     if not st_class:
-                        st_class = body_json.get("student_class") or body_json.get("class")
+                        st_class = body_json.get("student_class") or body_json.get(
+                            "class"
+                        )
                 except Exception:
                     pass
 
