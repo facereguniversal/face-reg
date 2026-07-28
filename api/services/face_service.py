@@ -66,7 +66,7 @@ class FaceService:
     async def _get_embeddings(self, image_data: list[bytes]) -> list[dict[str, Any]]:
         """Send images to model server, receive embeddings + quality scores."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=5.0) as client:
                 files = [
                     ("images", (f"face_{i}.jpg", data, "image/jpeg"))
                     for i, data in enumerate(image_data)
