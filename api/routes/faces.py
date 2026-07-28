@@ -33,8 +33,8 @@ async def validate_face(
 
 
 @router.post("/enroll", status_code=201)
-@router.post("/enroll_demo", status_code=201, include_in_schema=False)
-@router.post("/enroll_json", status_code=201, include_in_schema=False)
+@router.post("/enroll_demo", status_code=201)
+@router.post("/enroll_json", status_code=201)
 async def enroll_demo(
     request: Request,
     face_svc: FaceService = Depends(get_face_service),

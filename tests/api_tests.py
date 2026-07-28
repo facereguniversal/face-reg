@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from api.main import app
-
 
 class TestHealthEndpoint:
     """Verify the health check endpoint responds correctly."""
@@ -29,17 +27,14 @@ class TestHealthEndpoint:
 class TestEnrollmentRoutes:
     """Keep the enrollment API contract stable for current and cached clients."""
 
-    def test_canonical_and_compatibility_routes_accept_post(self):
+    def test_canonical_and_compatibility_routes_accept_post(self, client: TestClient):
         expected_paths = {
             "/api/faces/enroll",
             "/api/faces/enroll_demo",
             "/api/faces/enroll_json",
         }
-        post_paths = {
-            route.path
-            for route in app.routes
-            if "POST" in getattr(route, "methods", set())
-        }
+        paths = client.get("/openapi.json").json()["paths"]
+        post_paths = {path for path, methods in paths.items() if "post" in methods}
         assert expected_paths <= post_paths
 
 
