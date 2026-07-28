@@ -1,4 +1,7 @@
-const API_BASE = `${window.location.origin}/api`;
+const IS_LOCAL = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const API_BASE = IS_LOCAL
+    ? "http://localhost:8000/api"
+    : "https://face-reg-production.up.railway.app/api";
 // We allow query token for auth testing if needed
 const urlParams = new URLSearchParams(window.location.search);
 const TOKEN = urlParams.get('token') || "";
