@@ -63,8 +63,12 @@ function getFrameBlob() {
 function startScanning() {
   isIdentified = false;
   successCard.classList.remove("visible");
-  // timeout strictly so CSS transition finishes before pointer-events hides it
-  setTimeout(() => successCard.classList.add("hidden"), 500);
+  setTimeout(() => {
+    successCard.classList.add("hidden");
+    if (!isIdentified) {
+      successCard.style.display = "none";
+    }
+  }, 500);
 
   scannerInterface.classList.remove("success");
   scannerOverlay.style.display = "block";
@@ -106,10 +110,11 @@ async function scanFrame() {
         if (match.score > 0.4) {
           handleSuccess(match);
         } else {
-          statusText.textContent = "Move closer to the camera and try again";
+          statusText.textContent = "Move closer to the camera";
         }
       } else {
         console.log("[Checkin] No matches found");
+        statusText.textContent = "No matching student found. Please enroll first.";
       }
     } else {
       const errText = await response.text();
@@ -118,7 +123,7 @@ async function scanFrame() {
     }
   } catch (e) {
     console.error("[Checkin] Request failed:", e);
-    statusText.textContent = "Reconnecting to the check-in service";
+    statusText.textContent = "Reconnecting to check-in service...";
   }
 }
 
@@ -126,13 +131,14 @@ function handleSuccess(match) {
   isIdentified = true;
   clearInterval(scanInterval);
 
-  statusText.textContent = "Student recognized";
+  const studentName = match.name || "Student";
+  statusText.textContent = `Student recognized: ${studentName}!`;
 
   const nameEl = document.getElementById("student-name");
   const classEl = document.getElementById("student-class");
   const timeEl = document.getElementById("checkin-time");
 
-  if (nameEl) nameEl.textContent = match.name || "Student";
+  if (nameEl) nameEl.textContent = studentName;
   if (classEl) classEl.textContent = match.student_class || "Class Unassigned";
   if (timeEl)
     timeEl.textContent = new Date().toLocaleTimeString([], {
@@ -144,7 +150,7 @@ function handleSuccess(match) {
   scannerInterface.classList.add("success");
 
   successCard.classList.remove("hidden");
-  // Add small delay to ensure display block hits the render tree before transition
+  successCard.style.display = "flex";
   setTimeout(() => {
     successCard.classList.add("visible");
   }, 50);
