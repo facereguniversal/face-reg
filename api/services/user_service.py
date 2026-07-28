@@ -28,13 +28,17 @@ class UserService:
         role: str = "user",
     ) -> User:
         """Insert a new user."""
+        meta = dict(data.metadata or {})
+        if data.student_class:
+            meta["student_class"] = data.student_class
+
         user = User(
             id=uuid.uuid4(),
             name=data.name,
             email=data.email,
             hashed_password=hash_password(password) if password else None,
             role=role,
-            extra_metadata=data.metadata,
+            extra_metadata=meta if meta else None,
         )
         self.db.add(user)
         await self.audit_svc.log_action(
@@ -53,6 +57,7 @@ class UserService:
         email: str,
         password: str | None = None,
         role: str = "user",
+        extra_metadata: dict | None = None,
     ) -> User:
         """Insert a new user with a specific UUID safely."""
         existing_id = await self.get_by_id(str(user_id))
@@ -70,6 +75,7 @@ class UserService:
             email=unique_email,
             hashed_password=hash_password(password) if password else None,
             role=role,
+            extra_metadata=extra_metadata,
         )
         self.db.add(user)
         await self.audit_svc.log_action(

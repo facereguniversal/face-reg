@@ -109,24 +109,49 @@ async def enroll_faces(
         await ensure_tables_exist()
         async with async_session_factory() as db:
             user_svc = UserService(db)
+            
+            # Extract student details from query params, json, or form
+            req_params = request.query_params
+            st_name = req_params.get("name") or req_params.get("student_name")
+            st_class = req_params.get("student_class") or req_params.get("class")
+            
+            content_type = request.headers.get("content-type", "").lower()
+            body_json = {}
+            if "application/json" in content_type:
+                try:
+                    body_json = await request.json()
+                    if not st_name:
+                        st_name = body_json.get("name") or body_json.get("student_name")
+                    if not st_class:
+                        st_class = body_json.get("student_class") or body_json.get("class")
+                except Exception:
+                    pass
+
             user = await user_svc.get_by_id(str(user_id))
+            meta = {"student_class": st_class or "Class 10-A"}
             if not user:
-                email = f"user_{str(user_id).replace('-', '')[:12]}@example.com"
+                email = f"student_{str(user_id).replace('-', '')[:12]}@school.edu"
                 user = await user_svc.create_with_id(
                     user_id=user_id,
-                    name="Demo Guest",
+                    name=st_name or "Demo Student",
                     email=email,
+                    extra_metadata=meta,
                 )
-                await db.commit()
+            else:
+                if st_name:
+                    user.name = st_name
+                curr_meta = dict(user.extra_metadata or {})
+                if st_class:
+                    curr_meta["student_class"] = st_class
+                user.extra_metadata = curr_meta
+            await db.commit()
 
             raw_byte_list: list[bytes] = []
             if images:
                 for img_file in images:
                     raw_byte_list.append(await img_file.read())
             else:
-                content_type = request.headers.get("content-type", "").lower()
                 if "application/json" in content_type:
-                    body_json = await request.json()
                     raw_images = body_json.get("images", [])
                     for item in raw_images:
                         if isinstance(item, str):
@@ -137,6 +162,16 @@ async def enroll_faces(
                                 continue
                 else:
                     form = await request.form()
+                    if not st_name:
+                        st_name = form.get("name") or form.get("student_name")
+                        if st_name and user:
+                            user.name = st_name
+                    if not st_class:
+                        st_class = form.get("student_class") or form.get("class")
+                        if st_class and user:
+                            curr_meta = dict(user.extra_metadata or {})
+                            curr_meta["student_class"] = st_class
+                            user.extra_metadata = curr_meta
                     uploaded_files = form.getlist("images")
                     for img_file in uploaded_files:
                         if hasattr(img_file, "read"):

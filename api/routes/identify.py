@@ -46,8 +46,9 @@ async def enroll_demo(
             if not user:
                 user = await user_svc.create_with_id(
                     user_id=user_id,
-                    name="Demo Guest",
-                    email="demo_guest@example.com",
+                    name="Demo Student",
+                    email="demo_student@school.edu",
+                    extra_metadata={"student_class": "Class 10-A"},
                 )
                 await db.commit()
 

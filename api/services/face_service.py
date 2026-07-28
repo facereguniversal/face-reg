@@ -297,10 +297,16 @@ class FaceService:
             row = (await db.execute(stmt)).first()
             if row:
                 tpl, user = row
+                st_class = (
+                    user.extra_metadata.get("student_class", "Class Unassigned")
+                    if (user.extra_metadata and isinstance(user.extra_metadata, dict))
+                    else "Class Unassigned"
+                )
                 matches.append(
                     MatchResult(
                         user_id=user.id,
                         name=user.name,
+                        student_class=st_class,
                         score=round(hit["score"], 4),
                     )
                 )

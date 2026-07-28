@@ -37,6 +37,7 @@ class RefreshRequest(BaseModel):
 class UserCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     email: EmailStr
+    student_class: str | None = None
     metadata: dict[str, Any] | None = None
 
 
@@ -44,6 +45,7 @@ class UserResponse(BaseModel):
     user_id: uuid.UUID
     name: str
     email: EmailStr
+    student_class: str = "Class Unassigned"
     created_at: datetime
     face_count: int = 0
 
@@ -79,6 +81,7 @@ class EnrollResponse(BaseModel):
 class MatchResult(BaseModel):
     user_id: uuid.UUID
     name: str
+    student_class: str = "Class Unassigned"
     score: float
 
 
