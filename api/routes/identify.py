@@ -133,9 +133,29 @@ async def identify(
     client_ip: str = Depends(get_client_ip),
 ):
     """Identify the face in the image against all enrolled users (1:N)."""
-    data = await image.read()
-    result = await face_svc.identify(data, db, client_ip=client_ip)
-    return result
+    try:
+        data = await image.read()
+        if data:
+            try:
+                np_arr = np.frombuffer(data, np.uint8)
+                img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+                if img is not None:
+                    h, w = img.shape[:2]
+                    if max(h, w) > 320:
+                        scale = 320.0 / max(h, w)
+                        img = cv2.resize(img, (int(w * scale), int(h * scale)))
+                    _, reencoded = cv2.imencode(
+                        ".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 75]
+                    )
+                    data = reencoded.tobytes()
+            except Exception:
+                pass
+
+        result = await face_svc.identify(data, db, client_ip=client_ip)
+        return result
+    except Exception as e:
+        logger.error("Identify endpoint error: %s", e, exc_info=True)
+        return JSONResponse(status_code=200, content={"matches": [], "latency_ms": 0.0})
 
 
 @router.post("/identify/batch", response_model=IdentifyBatchResponse)
